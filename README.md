@@ -152,6 +152,10 @@ oder Enkel) ist die Wahrheit.
 
 ## Bedienung in Kürze
 
+- **Geführter Ablauf:** Beim Start von „Erzählen mit Ton/Video" springt die
+  App automatisch zur nächsten noch unbeantworteten Frage. Bereits
+  beantwortete Fragen zeigen im Aufnahme-Bildschirm einen grünen Hinweis
+  „✓ Schon beantwortet" – so wird nichts versehentlich doppelt aufgenommen.
 - **Erzählen mit Ton** → roter Knopf → sprechen. Zwei Tipps, mehr nicht.
   Mit ‹ und › blättert man durch die Fragen – auch während die Aufnahme läuft;
   die App merkt sich automatisch per Zeitstempel, welche Frage wann dran war.

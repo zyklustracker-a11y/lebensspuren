@@ -369,6 +369,25 @@ input[type="text"]:focus {
   margin: 18px 0 0;
 }
 
+.answered-badge {
+  display: inline-block;
+  align-self: center;
+  background: var(--green-soft);
+  color: var(--green);
+  font-size: 17px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 8px 18px;
+  margin: 18px auto 0;
+}
+
+.video-question-bar .answered-badge {
+  background: rgba(46, 125, 50, 0.85);
+  color: #fff;
+  font-size: 15px;
+  margin: 10px auto 0;
+}
+
 #waveform {
   display: block;
   width: 100%;

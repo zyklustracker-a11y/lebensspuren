@@ -8,7 +8,7 @@ import {
   deleteCloudAccount,
 } from './firebase.js';
 
-const APP_VERSION = '1.2.1';
+const APP_VERSION = '1.3.0';
 
 // ---------------------------------------------------------------------------
 // Kleine Helfer
@@ -148,6 +148,27 @@ const state = {
 
 function currentQuestion() {
   return state.allQuestions[state.questionIndex];
+}
+
+// Findet ab einer Position (einschließlich) die nächste noch unbeantwortete
+// Frage, mit Umlauf ans Listenende. Sind alle beantwortet, bleibt es bei from.
+function nextUnansweredIndex(from) {
+  const len = state.allQuestions.length;
+  for (let i = 0; i < len; i++) {
+    const idx = (from + i) % len;
+    if (!progressFor(state.allQuestions[idx].qid).answered) return idx;
+  }
+  return from;
+}
+
+// Beim Start einer Erzähl-Sitzung von der Startseite aus: dort weitermachen,
+// wo noch nichts aufgenommen wurde – niemand soll versehentlich doppelt erzählen.
+function continueAtNextUnanswered() {
+  const idx = nextUnansweredIndex(state.questionIndex);
+  if (idx !== state.questionIndex) {
+    state.questionIndex = idx;
+    setMeta('questionIndex', idx);
+  }
 }
 
 async function loadProgress() {
@@ -305,11 +326,14 @@ async function showView(name) {
 function renderQuestionDisplays() {
   const q = currentQuestion();
   if (!q) return;
+  const answered = progressFor(q.qid).answered;
   $('#audio-category').textContent = `${q.categoryIcon} ${q.categoryTitle}`;
   $('#audio-question').textContent = q.text;
   $('#audio-counter').textContent = `Frage ${state.questionIndex + 1} von ${state.allQuestions.length}`;
+  $('#audio-answered').classList.toggle('hidden', !answered);
   $('#video-category').textContent = `${q.categoryIcon} ${q.categoryTitle}`;
   $('#video-question').textContent = q.text;
+  $('#video-answered').classList.toggle('hidden', !answered);
 }
 
 async function goToQuestion(index) {
@@ -532,6 +556,7 @@ async function finalizeRecording() {
   for (const ts of recording.timestamps) {
     await updateProgress(ts.qid, { answered: true });
   }
+  renderQuestionDisplays(); // „Schon beantwortet"-Hinweis sofort anzeigen
 
   showToast('✓ Deine Erinnerung ist gespeichert', 'success', 3200);
 
@@ -1302,8 +1327,8 @@ window.addEventListener('online', () => syncAll());
 // ---------------------------------------------------------------------------
 
 function wireEvents() {
-  $('#btn-home-audio').addEventListener('click', () => showView('audio'));
-  $('#btn-home-video').addEventListener('click', () => showView('video'));
+  $('#btn-home-audio').addEventListener('click', () => { continueAtNextUnanswered(); showView('audio'); });
+  $('#btn-home-video').addEventListener('click', () => { continueAtNextUnanswered(); showView('video'); });
   $('#btn-home-browse').addEventListener('click', () => showView('browse'));
   $('#btn-home-recordings').addEventListener('click', () => showView('recordings'));
   $('#btn-settings').addEventListener('click', () => showView('settings'));
