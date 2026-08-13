@@ -8,7 +8,7 @@ import {
   deleteCloudAccount,
 } from './firebase.js';
 
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.0';
 
 // ---------------------------------------------------------------------------
 // Kleine Helfer
@@ -346,7 +346,7 @@ async function goToQuestion(index) {
   if (rec.active) {
     const q = currentQuestion();
     rec.timestamps.push({
-      offsetMs: Date.now() - rec.startTime,
+      offsetMs: recElapsed(),
       qid: q.qid,
       text: q.text,
       category: q.categoryTitle,
@@ -393,7 +393,18 @@ const rec = {
   timerInterval: null,
   wakeLock: null,
   finalized: false,
+  paused: false,
+  pausedTotal: 0,      // Summe aller Pausen in ms
+  pauseStartedAt: 0,
 };
+
+// Verstrichene Aufnahmezeit ohne Pausen – entspricht der Zeit in der
+// fertigen Datei (MediaRecorder.pause hält auch die Medienzeit an).
+function recElapsed() {
+  let t = Date.now() - rec.startTime - rec.pausedTotal;
+  if (rec.paused) t -= Date.now() - rec.pauseStartedAt;
+  return Math.max(0, t);
+}
 
 async function acquireWakeLock() {
   try {
@@ -422,7 +433,7 @@ function timerElement(mode) {
 
 function updateTimer() {
   if (!rec.active) return;
-  timerElement(rec.mode).textContent = formatClock(Date.now() - rec.startTime);
+  timerElement(rec.mode).textContent = formatClock(recElapsed());
 }
 
 async function startRecording(mode) {
@@ -454,14 +465,19 @@ async function startRecording(mode) {
     rec.chunks = [];
     rec.startTime = Date.now();
     rec.finalized = false;
+    rec.paused = false;
+    rec.pausedTotal = 0;
+    rec.pauseStartedAt = 0;
     const q = currentQuestion();
     rec.timestamps = [{ offsetMs: 0, qid: q.qid, text: q.text, category: q.categoryTitle }];
 
+    // Alle Rückrufe prüfen, ob sie noch zur aktuellen Aufnahme gehören –
+    // sonst könnte ein verspäteter Rückruf eine neue Aufnahme beenden.
     recorder.ondataavailable = (e) => {
-      if (e.data && e.data.size > 0) rec.chunks.push(e.data);
+      if (rec.recorder === recorder && e.data && e.data.size > 0) rec.chunks.push(e.data);
     };
-    recorder.onstop = () => finalizeRecording();
-    recorder.onerror = () => stopRecording('fehler');
+    recorder.onstop = () => { if (rec.recorder === recorder) finalizeRecording(); };
+    recorder.onerror = () => { if (rec.recorder === recorder) stopRecording('fehler'); };
 
     // Jede Sekunde ein Datenpaket: bei Unterbrechungen geht fast nichts verloren.
     recorder.start(1000);
@@ -473,6 +489,11 @@ async function startRecording(mode) {
     const timerEl = timerElement(mode);
     timerEl.classList.remove('idle');
     timerEl.textContent = '00:00';
+    // Pause-Knopf nur zeigen, wenn der Browser Pausieren unterstützt.
+    if (typeof recorder.pause === 'function') {
+      pauseButton(mode).classList.remove('hidden');
+      updatePauseUi();
+    }
     if (mode === 'audio') {
       $('#audio-hint').textContent = 'Aufnahme läuft – erzähl einfach. Zum Beenden erneut tippen.';
       startWaveform(stream);
@@ -499,8 +520,12 @@ async function stopRecording(reason = 'stop') {
   } catch {
     finalizeRecording();
   }
-  // Sicherheitsnetz: falls onstop nicht feuert, trotzdem speichern.
-  setTimeout(() => finalizeRecording(), 2000);
+  // Sicherheitsnetz: falls onstop nicht feuert, trotzdem speichern – aber nur,
+  // solange nicht längst eine neue Aufnahme läuft.
+  const recorderAtStop = rec.recorder;
+  setTimeout(() => {
+    if (rec.recorder === recorderAtStop) finalizeRecording();
+  }, 2000);
   if (reason === 'fehler') {
     showToast('Die Aufnahme wurde unterbrochen – alles bisher Gesagte ist gespeichert.', '', 4000);
   }
@@ -511,7 +536,7 @@ async function finalizeRecording() {
   rec.finalized = true;
 
   const mode = rec.mode;
-  const durationMs = Date.now() - rec.startTime;
+  const durationMs = recElapsed();
   const mimeType = (rec.recorder && rec.recorder.mimeType)
     || (rec.chunks[0] && rec.chunks[0].type)
     || (mode === 'audio' ? 'audio/webm' : 'video/webm');
@@ -530,6 +555,21 @@ async function finalizeRecording() {
 
   const started = new Date(rec.startTime);
   const firstQuestion = rec.timestamps[0];
+
+  // Mehrere Aufnahmen zur selben Startfrage werden durchnummeriert
+  // („Teil 2", „Teil 3" …), damit die Reihenfolge in der Übersicht und
+  // im Drive-Ordner sofort erkennbar ist.
+  let partSuffix = '';
+  try {
+    const existing = (await idb.getAll('recordings')).filter((r) => {
+      const startQid = r.startQid || (r.timestamps && r.timestamps[0] && r.timestamps[0].qid);
+      return startQid === firstQuestion.qid;
+    }).length;
+    if (existing > 0) partSuffix = ` (Teil ${existing + 1})`;
+  } catch {
+    // Nummerierung ist Komfort – das Speichern geht immer vor.
+  }
+
   const recording = {
     id: `rec-${rec.startTime}-${Math.random().toString(36).slice(2, 8)}`,
     createdAt: started.toISOString(),
@@ -538,7 +578,8 @@ async function finalizeRecording() {
     blob,
     size: blob.size,
     durationMs,
-    title: `${isoDateStamp(started)} – ${firstQuestion.text}`,
+    startQid: firstQuestion.qid,
+    title: `${isoDateStamp(started)} – ${firstQuestion.text}${partSuffix}`,
     timestamps: rec.timestamps,
     uploaded: false,
     driveFileId: null,
@@ -569,7 +610,8 @@ async function finalizeRecording() {
 }
 
 function resetRecordingUi(mode) {
-  recordButton(mode).classList.remove('recording');
+  recordButton(mode).classList.remove('recording', 'paused');
+  pauseButton(mode).classList.add('hidden');
   const timerEl = timerElement(mode);
   timerEl.classList.add('idle');
   timerEl.textContent = '';
@@ -583,6 +625,49 @@ function resetRecordingUi(mode) {
 function toggleRecording(mode) {
   if (rec.active) stopRecording('stop');
   else startRecording(mode);
+}
+
+// ---------------------------------------------------------------------------
+// Pause: kurz nachdenken, dann in derselben Aufnahme weitererzählen
+// ---------------------------------------------------------------------------
+
+function pauseButton(mode) {
+  return $(mode === 'audio' ? '#audio-pause' : '#video-pause');
+}
+
+function togglePause() {
+  if (!rec.active || !rec.recorder || typeof rec.recorder.pause !== 'function') return;
+  try {
+    if (rec.paused) {
+      rec.recorder.resume();
+      rec.pausedTotal += Date.now() - rec.pauseStartedAt;
+      rec.paused = false;
+      if (rec.mode === 'audio') {
+        $('#audio-hint').textContent = 'Aufnahme läuft – erzähl einfach. Zum Beenden erneut tippen.';
+        drawWaveform();
+      }
+    } else {
+      rec.recorder.pause();
+      rec.paused = true;
+      rec.pauseStartedAt = Date.now();
+      if (rec.mode === 'audio') {
+        $('#audio-hint').textContent = 'Pause – nimm dir Zeit zum Nachdenken. Es geht in derselben Aufnahme weiter.';
+        cancelAnimationFrame(wave.raf);
+      }
+    }
+  } catch (err) {
+    console.warn('Pausieren nicht möglich:', err);
+  }
+  updatePauseUi();
+}
+
+function updatePauseUi() {
+  if (!rec.active) return;
+  const btn = pauseButton(rec.mode);
+  btn.textContent = rec.paused ? '▶ Weiter erzählen' : '⏸ Pause';
+  btn.classList.toggle('resumed', rec.paused);
+  recordButton(rec.mode).classList.toggle('paused', rec.paused);
+  updateTimer();
 }
 
 // Geht die App in den Hintergrund (Anruf, Bildschirmsperre, App-Wechsel),
@@ -1339,6 +1424,8 @@ function wireEvents() {
 
   $('#audio-record').addEventListener('click', () => toggleRecording('audio'));
   $('#video-record').addEventListener('click', () => toggleRecording('video'));
+  $('#audio-pause').addEventListener('click', () => togglePause());
+  $('#video-pause').addEventListener('click', () => togglePause());
   $('#audio-prev').addEventListener('click', () => goToQuestion(state.questionIndex - 1));
   $('#audio-next').addEventListener('click', () => goToQuestion(state.questionIndex + 1));
   $('#video-prev').addEventListener('click', () => goToQuestion(state.questionIndex - 1));

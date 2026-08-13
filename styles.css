@@ -478,6 +478,52 @@ input[type="text"]:focus {
   min-height: 26px;
 }
 
+.pause-btn {
+  display: block;
+  margin: 10px auto 0;
+  min-height: var(--tap-min);
+  font-size: 19px;
+  font-weight: 700;
+  padding: 12px 28px;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  border: 2px solid var(--border);
+  box-shadow: var(--shadow);
+}
+
+.pause-btn.resumed {
+  background: var(--green-soft);
+  color: var(--green);
+  border-color: var(--green);
+}
+
+.video-pause {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 205px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.video-pause.resumed {
+  background: rgba(46, 125, 50, 0.85);
+  border-color: #7cc088;
+  color: #fff;
+}
+
+.video-pause:active {
+  transform: translateX(-50%) scale(0.97);
+}
+
+.record-btn.paused .record-symbol {
+  animation: none;
+  opacity: 0.55;
+}
+
 /* ---------- Video-Modus (immer dunkel, unabhängig vom Design) ---------- */
 
 #view-video {

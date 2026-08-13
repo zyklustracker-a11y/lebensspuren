@@ -156,6 +156,12 @@ oder Enkel) ist die Wahrheit.
   App automatisch zur nächsten noch unbeantworteten Frage. Bereits
   beantwortete Fragen zeigen im Aufnahme-Bildschirm einen grünen Hinweis
   „✓ Schon beantwortet" – so wird nichts versehentlich doppelt aufgenommen.
+- **Pause:** Während einer laufenden Aufnahme erscheint ein Pause-Knopf –
+  kurz nachdenken, dann mit „▶ Weiter erzählen" in derselben Aufnahme
+  fortfahren. Timer und Zeitstempel zählen die Pause nicht mit.
+- **Mehrere Aufnahmen zur selben Frage** werden automatisch nummeriert
+  („… (Teil 2)", „… (Teil 3)") – so bleibt die Reihenfolge in der Übersicht
+  und im Drive-Ordner erkennbar.
 - **Erzählen mit Ton** → roter Knopf → sprechen. Zwei Tipps, mehr nicht.
   Mit ‹ und › blättert man durch die Fragen – auch während die Aufnahme läuft;
   die App merkt sich automatisch per Zeitstempel, welche Frage wann dran war.

@@ -2,7 +2,7 @@
 // Cached die App-Shell, damit die App auch offline startet.
 // Keine Push-Benachrichtigungen (ausdrücklich nicht gewünscht).
 
-const VERSION = 'lebensspuren-v8';
+const VERSION = 'lebensspuren-v9';
 
 const SHELL = [
   './',
