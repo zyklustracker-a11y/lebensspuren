@@ -10,7 +10,7 @@ import {
   writeMemberCatalog,
 } from './firebase.js';
 
-const APP_VERSION = '1.5.1';
+const APP_VERSION = '1.5.2';
 
 // ---------------------------------------------------------------------------
 // Kleine Helfer
@@ -147,6 +147,7 @@ const state = {
   syncing: false,
   uploadingIds: new Set(),   // Aufnahmen, die gerade hochgeladen werden
   familySyncing: false,
+  settingsSection: null,     // geöffneter Einstellungs-Bereich (null = Übersicht)
   familyMembers: null,       // Personen, die mich als Familie eingetragen haben
   memberUid: null,           // aktuell geöffnete Person in der Familien-Ansicht
   memberCache: new Map(),    // uid → { info, catalog, progress, recordings }
@@ -1214,11 +1215,55 @@ function settingsSection(title) {
   return section;
 }
 
+// Die Einstellungen zeigen zuerst nur die Bereichs-Überschriften;
+// der Inhalt öffnet sich als Unterseite – aufgeräumt und für die
+// Großeltern nicht versehentlich verstellbar.
+const SETTINGS_SECTIONS = [
+  { id: 'familie', icon: '👨‍👩‍👧‍👦', title: 'Familie' },
+  { id: 'aussehen', icon: '🎨', title: 'Aussehen' },
+  { id: 'konto', icon: '☁️', title: 'Konto & Sicherung' },
+  { id: 'ueber', icon: 'ℹ️', title: 'Über die App' },
+];
+
 async function renderSettings() {
   const wrap = $('#settings-content');
   wrap.textContent = '';
+  const section = state.settingsSection;
+  $('#settings-title').textContent = section
+    ? SETTINGS_SECTIONS.find((s) => s.id === section).title
+    : 'Einstellungen';
+  $('#settings-back').textContent = section ? '‹ Einstellungen' : '‹ Zurück';
 
-  // --- Design ---
+  if (!section) {
+    for (const s of SETTINGS_SECTIONS) {
+      const row = document.createElement('button');
+      row.className = 'settings-nav-row';
+      const icon = document.createElement('span');
+      icon.className = 'settings-nav-icon';
+      icon.textContent = s.icon;
+      const label = document.createElement('span');
+      label.className = 'settings-nav-label';
+      label.textContent = s.title;
+      const chevron = document.createElement('span');
+      chevron.className = 'settings-nav-chevron';
+      chevron.textContent = '›';
+      row.append(icon, label, chevron);
+      row.addEventListener('click', () => {
+        state.settingsSection = s.id;
+        renderSettings();
+      });
+      wrap.appendChild(row);
+    }
+    return;
+  }
+
+  if (section === 'familie') await renderFamilySection(wrap);
+  if (section === 'aussehen') renderDesignSection(wrap);
+  if (section === 'konto') renderAccountSection(wrap);
+  if (section === 'ueber') renderAboutSection(wrap);
+}
+
+function renderDesignSection(wrap) {
   const design = settingsSection('Aussehen');
   const { design: activeDesign, mode: activeMode } = themeSetting();
 
@@ -1270,8 +1315,9 @@ async function renderSettings() {
   }
   design.appendChild(modeRow);
   wrap.appendChild(design);
+}
 
-  // --- Konto & Sicherung ---
+function renderAccountSection(wrap) {
   const account = settingsSection('Konto & Sicherung');
   if (!isConfigured() || !state.cloud) {
     const note = document.createElement('p');
@@ -1332,8 +1378,9 @@ async function renderSettings() {
     account.appendChild(signInBtn);
   }
   wrap.appendChild(account);
+}
 
-  // --- Familie ---
+async function renderFamilySection(wrap) {
   const family = settingsSection('Familie');
   const famNote = document.createElement('p');
   famNote.className = 'settings-note';
@@ -1386,8 +1433,9 @@ async function renderSettings() {
     family.appendChild(hint);
   }
   wrap.appendChild(family);
+}
 
-  // --- Über die App ---
+function renderAboutSection(wrap) {
   const about = settingsSection('Über die App');
   const version = document.createElement('p');
   version.className = 'settings-note';
@@ -1858,7 +1906,18 @@ function wireEvents() {
   $('#btn-home-browse').addEventListener('click', () => showView('browse'));
   $('#btn-home-recordings').addEventListener('click', () => showView('recordings'));
   $('#btn-home-family').addEventListener('click', () => showView('family'));
-  $('#btn-settings').addEventListener('click', () => showView('settings'));
+  $('#btn-settings').addEventListener('click', () => {
+    state.settingsSection = null;
+    showView('settings');
+  });
+  $('#settings-back').addEventListener('click', () => {
+    if (state.settingsSection) {
+      state.settingsSection = null;
+      renderSettings();
+    } else {
+      showView('home');
+    }
+  });
   $('#member-back').addEventListener('click', () => showView('family'));
 
   document.querySelectorAll('[data-back]').forEach((btn) => {
