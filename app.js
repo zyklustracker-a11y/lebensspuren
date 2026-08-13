@@ -10,7 +10,7 @@ import {
   writeMemberCatalog,
 } from './firebase.js';
 
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.7.0';
 
 // ---------------------------------------------------------------------------
 // Kleine Helfer
@@ -373,6 +373,7 @@ async function goToQuestion(index) {
       text: q.text,
       category: q.categoryTitle,
     });
+    noteTranscriptQuestionChange(q);
   }
 }
 
@@ -446,6 +447,90 @@ function askAnsweredDialog(qid, questionText) {
 function hideAnsweredDialog() {
   pendingAnsweredQid = null;
   $('#answered-dialog').classList.add('hidden');
+}
+
+// ---------------------------------------------------------------------------
+// Live-Transkription (kostenlos über die Spracherkennung des Browsers).
+// Läuft nur mit, wo sie die Aufnahme nicht stört – auf iOS bewusst aus,
+// dort übernimmt später z. B. NotebookLM das Transkribieren.
+// ---------------------------------------------------------------------------
+
+const speech = { engine: null, active: false, text: '' };
+
+function transcriptionSupported() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return false;
+  const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  return !isIos;
+}
+
+function startTranscription() {
+  if (!transcriptionSupported()) return;
+  try {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const engine = new SR();
+    engine.lang = 'de-DE';
+    engine.continuous = true;
+    engine.interimResults = false;
+    speech.engine = engine;
+    speech.active = true;
+    const q = currentQuestion();
+    speech.text = `[00:00] Frage: ${q.text}\n`;
+    let failures = 0;
+    engine.onresult = (e) => {
+      failures = 0;
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) {
+          const part = (e.results[i][0].transcript || '').trim();
+          if (part) speech.text += `${part} `;
+        }
+      }
+    };
+    // Chrome beendet die Erkennung nach Sprechpausen von selbst –
+    // solange die Aufnahme läuft, einfach wieder starten. Schlägt sie
+    // mehrfach hintereinander fehl (z. B. offline), aufgeben statt loopen.
+    engine.onend = () => {
+      if (speech.active && rec.active && !rec.paused && failures < 3) {
+        try { engine.start(); } catch { /* schon gestartet */ }
+      }
+    };
+    engine.onerror = () => { failures += 1; };
+    engine.start();
+  } catch (err) {
+    console.warn('Transkription nicht verfügbar:', err);
+    speech.engine = null;
+    speech.active = false;
+  }
+}
+
+function pauseTranscription() {
+  if (speech.engine) { try { speech.engine.stop(); } catch { /* egal */ } }
+}
+
+function resumeTranscription() {
+  if (speech.active && speech.engine) {
+    try { speech.engine.start(); } catch { /* läuft evtl. schon */ }
+  }
+}
+
+function noteTranscriptQuestionChange(question) {
+  if (speech.active) {
+    speech.text += `\n\n[${formatClock(recElapsed())}] Frage: ${question.text}\n`;
+  }
+}
+
+// Beendet die Erkennung und liefert das Transkript (oder '').
+function stopTranscription() {
+  if (!speech.active) return '';
+  speech.active = false;
+  pauseTranscription();
+  speech.engine = null;
+  const body = speech.text.trim();
+  speech.text = '';
+  // Nur die Fragen-Marker ohne gesprochenen Text zählen nicht als Transkript.
+  const spoken = body.replace(/\[[0-9:]+\] Frage: [^\n]*\n?/g, '').trim();
+  return spoken ? body : '';
 }
 
 // Verstrichene Aufnahmezeit ohne Pausen – entspricht der Zeit in der
@@ -550,6 +635,7 @@ async function startRecording(mode) {
     } else {
       $('#video-flip').classList.add('hidden');
     }
+    startTranscription();
   } catch (err) {
     console.warn('Aufnahme konnte nicht starten:', err);
     resetRecordingUi(mode);
@@ -587,6 +673,7 @@ async function finalizeRecording() {
 
   const mode = rec.mode;
   const durationMs = recElapsed();
+  const transcript = stopTranscription();
   const mimeType = (rec.recorder && rec.recorder.mimeType)
     || (rec.chunks[0] && rec.chunks[0].type)
     || (mode === 'audio' ? 'audio/webm' : 'video/webm');
@@ -631,6 +718,7 @@ async function finalizeRecording() {
     startQid: firstQuestion.qid,
     title: `${isoDateStamp(started)} – ${firstQuestion.text}${partSuffix}`,
     timestamps: rec.timestamps,
+    transcript,
     uploaded: false,
     driveFileId: null,
   };
@@ -709,6 +797,7 @@ function togglePause() {
       rec.recorder.resume();
       rec.pausedTotal += Date.now() - rec.pauseStartedAt;
       rec.paused = false;
+      resumeTranscription();
       if (rec.mode === 'audio') {
         $('#audio-hint').textContent = 'Aufnahme läuft – erzähl einfach. Zum Beenden erneut tippen.';
         drawWaveform();
@@ -717,6 +806,7 @@ function togglePause() {
       rec.recorder.pause();
       rec.paused = true;
       rec.pauseStartedAt = Date.now();
+      pauseTranscription();
       if (rec.mode === 'audio') {
         $('#audio-hint').textContent = 'Pause – nimm dir Zeit zum Nachdenken. Es geht in derselben Aufnahme weiter.';
         cancelAnimationFrame(wave.raf);
@@ -1195,6 +1285,29 @@ function timestampsFile(recording) {
   return new File([timestampsText(recording)], name, { type: 'text/plain' });
 }
 
+function transcriptText(recording) {
+  if (!recording.transcript) return '';
+  return [
+    `Aufnahme: ${recording.title}`,
+    `Datum: ${formatDateTime(recording.createdAt)}`,
+    'Automatisches Transkript (Browser-Spracherkennung – kann Fehler enthalten):',
+    '',
+    recording.transcript,
+  ].join('\n');
+}
+
+function transcriptFile(recording) {
+  const name = `${sanitizeFilename(recording.title)} – Transkript.txt`;
+  return new File([transcriptText(recording)], name, { type: 'text/plain' });
+}
+
+// Ordnername im Drive: „Kategorie – Frage" der Startfrage.
+function questionFolderName(recording) {
+  const first = recording.timestamps && recording.timestamps[0];
+  if (!first) return '';
+  return sanitizeFilename(`${first.category} – ${first.text}`).slice(0, 100);
+}
+
 async function shareFiles(files, fallbackToastText) {
   if (navigator.share && navigator.canShare && navigator.canShare({ files })) {
     try {
@@ -1221,10 +1334,9 @@ async function shareFiles(files, fallbackToastText) {
 }
 
 async function shareRecording(recording) {
-  await shareFiles(
-    [fileForRecording(recording), timestampsFile(recording)],
-    'Die Dateien wurden heruntergeladen.'
-  );
+  const files = [fileForRecording(recording), timestampsFile(recording)];
+  if (recording.transcript) files.push(transcriptFile(recording));
+  await shareFiles(files, 'Die Dateien wurden heruntergeladen.');
 }
 
 async function exportTimestamps(recording) {
@@ -1904,6 +2016,8 @@ async function syncAll() {
       return;
     }
 
+    const profileName = sanitizeFilename(await getMeta('profileName', ''));
+
     for (const recording of recordings) {
       if (!state.user || !navigator.onLine) break;
       state.uploadingIds.add(recording.id);
@@ -1913,7 +2027,12 @@ async function syncAll() {
         // maximal 15 Minuten pro Aufnahme.
         const timeoutMs = Math.min(120000 + recording.size / 20, 15 * 60 * 1000);
         const driveFileId = await withTimeout(
-          uploadRecording(recording, recording.blob, timestampsText(recording)),
+          uploadRecording(recording, recording.blob, {
+            timestampsText: timestampsText(recording),
+            transcriptText: transcriptText(recording),
+            profileName,
+            questionFolder: questionFolderName(recording),
+          }),
           timeoutMs,
           'upload-zeitlimit'
         );

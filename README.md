@@ -119,6 +119,18 @@ Einrichtung Schritt für Schritt:
 Jede Person nutzt ihr eigenes Google-Konto – die Familie bekommt trotzdem
 vollen Einblick:
 
+- **Ordnung im Drive:** Die App legt automatisch Unterordner an:
+  `Lebensspuren / <Profilname> / <Kategorie – Frage> /` – darin liegen die
+  Mediendatei, die Zeitstempel-Textdatei und (wo verfügbar) das Transkript.
+  Mehrere Aufnahmen zur selben Frage („Teil 2" …) sammeln sich im selben
+  Frage-Ordner.
+- **Automatisches Transkript:** Während der Aufnahme hört die kostenlose
+  Spracherkennung des Browsers mit und legt „… – Transkript.txt" mit in den
+  Drive-Ordner (inklusive Fragen-Markern mit Zeitangabe). Sie braucht
+  Internet während der Aufnahme und läuft auf Android/Chrome und am
+  Desktop; auf dem iPhone ist sie bewusst abgeschaltet, weil sie dort die
+  Aufnahme stören kann. Qualität: gut für den Überblick – für die
+  Buchfassung bleibt ein Dienst wie NotebookLM die bessere Endstufe.
 - **Einrichten (einmalig, auf dem Gerät der erzählenden Person):**
   Einstellungen → „Familie" → Profilname eintragen (z. B. „Oma Helga") und
   unter „Familien-Mitglied hinzufügen" die Google-E-Mail des Enkels.

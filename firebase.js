@@ -245,9 +245,40 @@ async function driveFetch(token, url, options = {}) {
 // Abläufe parallel je einen Ordner anlegen), und falls durch frühere
 // Versionen Duplikate entstanden sind, räumt die App sie selbst auf.
 let folderPromise = null;
+const subfolderPromises = new Map();
 
 function resetDriveFolderCache() {
   folderPromise = null;
+  subfolderPromises.clear();
+}
+
+// Findet oder erstellt einen Unterordner – ebenfalls serialisiert,
+// damit parallele Uploads keine Duplikate anlegen.
+function ensureSubfolder(token, parentId, name) {
+  const key = `${parentId}/${name}`;
+  if (!subfolderPromises.has(key)) {
+    subfolderPromises.set(key, resolveSubfolder(token, parentId, name).catch((err) => {
+      subfolderPromises.delete(key);
+      throw err;
+    }));
+  }
+  return subfolderPromises.get(key);
+}
+
+async function resolveSubfolder(token, parentId, name) {
+  const safeName = name.replace(/'/g, "\\'");
+  const q = encodeURIComponent(
+    `name='${safeName}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`
+  );
+  const found = (await (await driveFetch(token,
+    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)&orderBy=createdTime`)).json()).files || [];
+  if (found.length > 0) return found[0].id;
+  const created = await (await driveFetch(token, 'https://www.googleapis.com/drive/v3/files', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+    body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] }),
+  })).json();
+  return created.id;
 }
 
 function ensureDriveFolder(token) {
@@ -324,9 +355,12 @@ async function driveUploadFile(token, name, mimeType, blob, folderId) {
   return (await res.json()).id;
 }
 
-// Sichert eine Aufnahme: Mediendatei + Zeitstempel-Textdatei nach Google Drive,
-// Metadaten nach Firestore. Gibt die Drive-Datei-ID zurück.
-export async function uploadRecording(rec, blob, timestampsText) {
+// Sichert eine Aufnahme nach Google Drive – aufgeräumt in Unterordnern:
+// Lebensspuren / <Profilname> / <Kategorie – Frage> / Dateien
+// (Mediendatei, Zeitstempel-Textdatei, falls vorhanden das Transkript).
+// Metadaten gehen nach Firestore. Gibt die Drive-Datei-ID zurück.
+export async function uploadRecording(rec, blob, extras = {}) {
+  const { timestampsText, transcriptText, profileName, questionFolder } = extras;
   if (!fb) throw new Error('Cloud nicht initialisiert');
   const user = fb.auth.currentUser;
   if (!user) throw new Error('Nicht angemeldet');
@@ -334,7 +368,10 @@ export async function uploadRecording(rec, blob, timestampsText) {
   const token = await getDriveToken();
   if (!token) throw new Error('kein-drive-token');
 
-  const folderId = await ensureDriveFolder(token);
+  let folderId = await ensureDriveFolder(token);
+  if (profileName) folderId = await ensureSubfolder(token, folderId, profileName);
+  if (questionFolder) folderId = await ensureSubfolder(token, folderId, questionFolder);
+
   const ext = extensionForMime(rec.mimeType);
   const safeTitle = rec.title.replace(/[\\/:*?"<>|]/g, '').slice(0, 120);
 
@@ -342,6 +379,10 @@ export async function uploadRecording(rec, blob, timestampsText) {
   if (timestampsText) {
     await driveUploadFile(token, `${safeTitle} – Zeitstempel.txt`, 'text/plain',
       new Blob([timestampsText], { type: 'text/plain' }), folderId);
+  }
+  if (transcriptText) {
+    await driveUploadFile(token, `${safeTitle} – Transkript.txt`, 'text/plain',
+      new Blob([transcriptText], { type: 'text/plain' }), folderId);
   }
 
   const docRef = fb.fsMod.doc(fb.db, 'users', user.uid, 'recordings', rec.id);
