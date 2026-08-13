@@ -31,7 +31,7 @@ export const firebaseConfig = {
   appId: '1:830956130018:web:01fc468d90dc87d0a118bb',
 };
 
-export const googleOAuthClientId = '';
+export const googleOAuthClientId = '830956130018-6toupd91aa5oero4d33estgk1931aoe9.apps.googleusercontent.com';
 // ╚═══════════════ ENDE DES KONFIGURATIONS-BLOCKS ══════════════════╝
 
 const SDK = 'https://www.gstatic.com/firebasejs/11.0.1';
