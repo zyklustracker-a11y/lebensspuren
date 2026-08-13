@@ -10,7 +10,7 @@ import {
   writeMemberCatalog,
 } from './firebase.js';
 
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.5.1';
 
 // ---------------------------------------------------------------------------
 // Kleine Helfer
@@ -1400,6 +1400,11 @@ async function renderSettings() {
 // Familien-Zugriff, Seite der Großeltern: Profil, Freigaben, Katalog-Abgleich
 // ---------------------------------------------------------------------------
 
+// Bereits in dieser Sitzung bestätigte Ordner-Freigaben. Bewusst nicht
+// dauerhaft gespeichert: So wird die Freigabe bei jedem App-Start einmal
+// neu zugesichert und übersteht auch eine Ordner-Zusammenführung.
+const sessionSharedEmails = new Set();
+
 let familySyncTimer = null;
 function scheduleFamilySync() {
   clearTimeout(familySyncTimer);
@@ -1453,14 +1458,14 @@ async function syncFamilyData() {
       pushCatalog,
     });
 
-    // Ausstehende Drive-Freigaben nachholen – darf nie untergehen.
-    const shared = await getMeta('sharedFamilyEmails', []);
-    const pending = familyEmails.filter((e) => !shared.includes(e));
+    // Drive-Freigaben sicherstellen – darf nie untergehen. Einmal pro
+    // Sitzung wird jede Familien-E-Mail erneut bestätigt (die Drive-API
+    // behandelt bestehende Freigaben dabei einfach als erledigt).
+    const pending = familyEmails.filter((e) => !sessionSharedEmails.has(e));
     for (const email of pending) {
       try {
         await shareDriveFolderWithEmail(email);
-        shared.push(email);
-        await setMeta('sharedFamilyEmails', shared);
+        sessionSharedEmails.add(email);
       } catch (err) {
         console.warn(`Ordner-Freigabe für ${email} folgt beim nächsten Versuch:`, err);
         break;
@@ -1488,11 +1493,7 @@ async function addFamilyEmail(rawEmail) {
   // nötig). Klappt es nicht, holt syncFamilyData es automatisch nach.
   try {
     await shareDriveFolderWithEmail(email, { interactive: true });
-    const shared = await getMeta('sharedFamilyEmails', []);
-    if (!shared.includes(email)) {
-      shared.push(email);
-      await setMeta('sharedFamilyEmails', shared);
-    }
+    sessionSharedEmails.add(email);
     showToast('✓ Familien-Zugriff eingerichtet, Drive-Ordner ist freigegeben', 'success', 4000);
   } catch (err) {
     console.warn('Ordner-Freigabe wird automatisch nachgeholt:', err);
@@ -1505,8 +1506,7 @@ async function addFamilyEmail(rawEmail) {
 async function removeFamilyEmail(email) {
   const familyEmails = (await getMeta('familyEmails', [])).filter((e) => e !== email);
   await setMeta('familyEmails', familyEmails);
-  const shared = (await getMeta('sharedFamilyEmails', [])).filter((e) => e !== email);
-  await setMeta('sharedFamilyEmails', shared);
+  sessionSharedEmails.delete(email);
   try {
     await removeDriveFolderShare(email);
   } catch (err) {

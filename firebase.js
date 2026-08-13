@@ -118,6 +118,7 @@ function captureTokenFromResult(result) {
 export async function signOutUser() {
   if (!fb) return;
   driveToken = null;
+  resetDriveFolderCache();
   await fb.authMod.signOut(fb.auth);
 }
 
@@ -141,6 +142,7 @@ export async function deleteCloudAccount() {
   ]);
 
   driveToken = null;
+  resetDriveFolderCache();
   await fb.authMod.deleteUser(user);
 }
 
@@ -239,20 +241,71 @@ async function driveFetch(token, url, options = {}) {
 }
 
 // Findet oder erstellt den Ordner „Lebensspuren" im Drive des Nutzers.
-async function ensureDriveFolder(token) {
+// Gleichzeitige Aufrufe teilen sich dieselbe Suche (sonst könnten zwei
+// Abläufe parallel je einen Ordner anlegen), und falls durch frühere
+// Versionen Duplikate entstanden sind, räumt die App sie selbst auf.
+let folderPromise = null;
+
+function resetDriveFolderCache() {
+  folderPromise = null;
+}
+
+function ensureDriveFolder(token) {
+  if (!folderPromise) {
+    folderPromise = resolveDriveFolder(token).catch((err) => {
+      folderPromise = null; // Beim nächsten Versuch neu suchen
+      throw err;
+    });
+  }
+  return folderPromise;
+}
+
+async function listFolderChildren(token, folderId) {
+  const q = encodeURIComponent(`'${folderId}' in parents and trashed=false`);
+  const res = await (await driveFetch(token,
+    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)&pageSize=1000`)).json();
+  return res.files || [];
+}
+
+async function resolveDriveFolder(token) {
   const q = encodeURIComponent(
     `name='${DRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`
   );
-  const found = await (await driveFetch(token,
-    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)`)).json();
-  if (found.files && found.files.length > 0) return found.files[0].id;
+  const found = (await (await driveFetch(token,
+    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)&orderBy=createdTime`)).json()).files || [];
 
-  const created = await (await driveFetch(token, 'https://www.googleapis.com/drive/v3/files', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json; charset=UTF-8' },
-    body: JSON.stringify({ name: DRIVE_FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' }),
-  })).json();
-  return created.id;
+  if (found.length === 0) {
+    const created = await (await driveFetch(token, 'https://www.googleapis.com/drive/v3/files', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+      body: JSON.stringify({ name: DRIVE_FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' }),
+    })).json();
+    return created.id;
+  }
+  if (found.length === 1) return found[0].id;
+
+  // Duplikate zusammenführen: Ordner mit den meisten Dateien behalten,
+  // Inhalte der übrigen hinüberziehen, leere Duplikate in den Papierkorb.
+  const withContents = [];
+  for (const f of found) {
+    withContents.push({ id: f.id, children: await listFolderChildren(token, f.id) });
+  }
+  withContents.sort((a, b) => b.children.length - a.children.length);
+  const keep = withContents[0];
+  for (const dup of withContents.slice(1)) {
+    for (const child of dup.children) {
+      await driveFetch(token,
+        `https://www.googleapis.com/drive/v3/files/${child.id}?addParents=${keep.id}&removeParents=${dup.id}`,
+        { method: 'PATCH', headers: { 'Content-Type': 'application/json; charset=UTF-8' }, body: '{}' });
+    }
+    await driveFetch(token, `https://www.googleapis.com/drive/v3/files/${dup.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+      body: JSON.stringify({ trashed: true }),
+    });
+  }
+  console.info(`Doppelte Lebensspuren-Ordner zusammengeführt (${found.length} → 1).`);
+  return keep.id;
 }
 
 // Lädt eine Datei per fortsetzbarem Upload nach Drive (geeignet für große Dateien).
