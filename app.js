@@ -11,7 +11,7 @@ import {
   trashDriveFiles, trashDriveFilesByTitle, deleteMemberRecording,
 } from './firebase.js';
 
-const APP_VERSION = '1.8.0';
+const APP_VERSION = '1.8.1';
 
 // ---------------------------------------------------------------------------
 // Kleine Helfer
@@ -1899,7 +1899,11 @@ function buildMemberRecordingCard(uid, r, isDeleted) {
         renderMember();
       } catch (err) {
         console.warn('Endgültiges Entfernen fehlgeschlagen:', err);
-        showToast('Das hat nicht geklappt. Versuch es später noch einmal.', 'error', 4000);
+        if (err && err.code === 'permission-denied') {
+          showToast('Firestore lehnt ab: Die aktuellen Security Rules (firestore.rules) müssen in der Firebase-Konsole veröffentlicht werden.', 'error', 7000);
+        } else {
+          showToast('Das hat nicht geklappt. Versuch es später noch einmal.', 'error', 4000);
+        }
       }
     });
     card.appendChild(purge);
