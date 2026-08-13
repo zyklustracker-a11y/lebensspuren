@@ -169,6 +169,17 @@
     <div id="member-content" class="settings-content"></div>
   </section>
 
+  <!-- Nachfrage nach kurzen Aufnahmen (unter 1 Minute pro Frage) -->
+  <div id="answered-dialog" class="dialog-overlay hidden">
+    <div class="dialog-card">
+      <p class="dialog-title">✓ Deine Aufnahme ist gespeichert</p>
+      <p id="answered-dialog-question" class="dialog-question"></p>
+      <p class="dialog-text">Das war eine kurze Aufnahme. Ist die Frage damit beantwortet?</p>
+      <button id="answered-yes" class="action-btn primary-action">✓ Ja, Frage ist beantwortet</button>
+      <button id="answered-later" class="action-btn">Ich erzähle später weiter</button>
+    </div>
+  </div>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script type="module" src="app.js"></script>

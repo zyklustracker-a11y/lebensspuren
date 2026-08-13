@@ -1053,6 +1053,59 @@ video.recording-player {
   border: 1px solid rgba(128, 128, 128, 0.35);
 }
 
+/* ---------- Nachfrage-Dialog ---------- */
+
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px;
+}
+
+.dialog-card {
+  width: 100%;
+  max-width: 560px;
+  background: var(--surface);
+  color: var(--text);
+  border-radius: var(--radius);
+  border: 1.5px solid var(--border);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  padding: 22px 20px calc(20px + env(safe-area-inset-bottom));
+}
+
+.dialog-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--green);
+  margin: 0 0 10px;
+}
+
+.dialog-question {
+  font-size: 21px;
+  font-weight: 700;
+  font-family: var(--font-display);
+  line-height: 1.35;
+  margin: 0 0 8px;
+}
+
+.dialog-text {
+  font-size: 18px;
+  color: var(--text-soft);
+  margin: 0 0 16px;
+}
+
+.dialog-card .action-btn {
+  display: block;
+  width: 100%;
+  min-height: 64px;
+  font-size: 20px;
+  margin-top: 10px;
+}
+
 /* ---------- Sonstiges ---------- */
 
 .toast {

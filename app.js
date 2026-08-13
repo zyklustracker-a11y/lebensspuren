@@ -10,7 +10,7 @@ import {
   writeMemberCatalog,
 } from './firebase.js';
 
-const APP_VERSION = '1.5.2';
+const APP_VERSION = '1.6.0';
 
 // ---------------------------------------------------------------------------
 // Kleine Helfer
@@ -324,6 +324,7 @@ async function showView(name) {
   if (state.view === 'video' && name !== 'video') stopCameraPreview();
   if (state.view === 'recordings' && name !== 'recordings') closePlayer();
 
+  hideAnsweredDialog();
   state.view = name;
   for (const v of VIEWS) {
     $(`#view-${v}`).classList.toggle('active', v === name);
@@ -418,6 +419,34 @@ const rec = {
   pausedTotal: 0,      // Summe aller Pausen in ms
   pauseStartedAt: 0,
 };
+
+// Ab dieser Redezeit pro Frage gilt sie automatisch als beantwortet.
+const ANSWERED_MIN_MS = 60000;
+
+// Summiert je Frage, wie lange sie während der Aufnahme zu sehen war.
+function computeDwellMap(timestamps, durationMs) {
+  const map = new Map();
+  for (let i = 0; i < timestamps.length; i++) {
+    const start = timestamps[i].offsetMs || 0;
+    const end = i + 1 < timestamps.length ? (timestamps[i + 1].offsetMs || 0) : durationMs;
+    map.set(timestamps[i].qid, (map.get(timestamps[i].qid) || 0) + Math.max(0, end - start));
+  }
+  return map;
+}
+
+// Nachfrage-Dialog für kurze Aufnahmen: beantwortet oder später weiter?
+let pendingAnsweredQid = null;
+
+function askAnsweredDialog(qid, questionText) {
+  pendingAnsweredQid = qid;
+  $('#answered-dialog-question').textContent = questionText;
+  $('#answered-dialog').classList.remove('hidden');
+}
+
+function hideAnsweredDialog() {
+  pendingAnsweredQid = null;
+  $('#answered-dialog').classList.add('hidden');
+}
 
 // Verstrichene Aufnahmezeit ohne Pausen – entspricht der Zeit in der
 // fertigen Datei (MediaRecorder.pause hält auch die Medienzeit an).
@@ -614,13 +643,30 @@ async function finalizeRecording() {
     return;
   }
 
-  // Alle Fragen dieser Aufnahme als beantwortet markieren (grüner Haken).
-  for (const ts of recording.timestamps) {
-    await updateProgress(ts.qid, { answered: true });
+  // Haken nur für echtes Erzählen: Eine Frage gilt als beantwortet, wenn
+  // während der Aufnahme mindestens eine Minute zu ihr gesprochen wurde.
+  const dwell = computeDwellMap(recording.timestamps, durationMs);
+  let answeredAny = false;
+  for (const [qid, ms] of dwell) {
+    if (ms >= ANSWERED_MIN_MS) {
+      await updateProgress(qid, { answered: true });
+      answeredAny = true;
+    }
   }
   renderQuestionDisplays(); // „Schon beantwortet"-Hinweis sofort anzeigen
 
-  showToast('✓ Deine Erinnerung ist gespeichert', 'success', 3200);
+  if (answeredAny) {
+    showToast('✓ Deine Erinnerung ist gespeichert', 'success', 3200);
+  } else {
+    // Kurze Aufnahme: freundlich nachfragen statt automatisch abhaken.
+    let bestQid = recording.timestamps[0].qid;
+    let bestMs = -1;
+    for (const [qid, ms] of dwell) {
+      if (ms > bestMs) { bestMs = ms; bestQid = qid; }
+    }
+    const q = state.allQuestions.find((x) => x.qid === bestQid);
+    askAnsweredDialog(bestQid, q ? q.text : recording.timestamps[0].text);
+  }
 
   // Speicher gegen automatisches Aufräumen des Browsers schützen.
   if (navigator.storage && navigator.storage.persist) {
@@ -1936,6 +1982,44 @@ function wireEvents() {
 
   $('#btn-share-all').addEventListener('click', () => shareAllRecordings());
   $('#btn-export-all-timestamps').addEventListener('click', () => exportAllTimestamps());
+
+  $('#answered-yes').addEventListener('click', async () => {
+    if (pendingAnsweredQid) await updateProgress(pendingAnsweredQid, { answered: true });
+    hideAnsweredDialog();
+    renderQuestionDisplays();
+    showToast('✓ Frage als beantwortet markiert', 'success');
+  });
+  $('#answered-later').addEventListener('click', () => {
+    hideAnsweredDialog();
+    showToast('Alles klar – die Frage bleibt offen, die Aufnahme ist gespeichert.', '', 3500);
+  });
+}
+
+// Einmalige Bereinigung: Haken aus den tatsächlich vorhandenen Aufnahmen
+// neu berechnen (frühere Versionen hakten schon beim bloßen Anzeigen ab).
+async function migrateAnsweredFlags() {
+  if (await getMeta('answeredMigrationV2', false)) return;
+  try {
+    const recordings = await idb.getAll('recordings');
+    const earned = new Set();
+    for (const r of recordings) {
+      const dwell = computeDwellMap(r.timestamps || [], r.durationMs || 0);
+      for (const [qid, ms] of dwell) {
+        if (ms >= ANSWERED_MIN_MS) earned.add(qid);
+      }
+    }
+    for (const [qid, row] of [...state.progress]) {
+      if (row.answered && !earned.has(qid)) {
+        await updateProgress(qid, { answered: false });
+      }
+    }
+    for (const qid of earned) {
+      if (!progressFor(qid).answered) await updateProgress(qid, { answered: true });
+    }
+    await setMeta('answeredMigrationV2', true);
+  } catch (err) {
+    console.warn('Haken-Bereinigung später erneut:', err);
+  }
 }
 
 async function registerServiceWorker() {
@@ -1952,6 +2036,7 @@ async function init() {
   applyTheme();
   wireEvents();
   await loadProgress();
+  await migrateAnsweredFlags();
   await buildCatalog();
   state.questionIndex = Math.min(
     await getMeta('questionIndex', 0),

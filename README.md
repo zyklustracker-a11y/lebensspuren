@@ -180,6 +180,13 @@ oder Enkel) ist die Wahrheit.
   App automatisch zur nächsten noch unbeantworteten Frage. Bereits
   beantwortete Fragen zeigen im Aufnahme-Bildschirm einen grünen Hinweis
   „✓ Schon beantwortet" – so wird nichts versehentlich doppelt aufgenommen.
+- **Wann gilt eine Frage als beantwortet?** Erst wenn in einer gespeicherten
+  Aufnahme mindestens eine Minute zu ihr gesprochen wurde (beim Blättern
+  zählt die Zeit pro Frage). Nach kürzeren Aufnahmen fragt die App nach:
+  „Ja, Frage ist beantwortet" oder „Ich erzähle später weiter" – die
+  Aufnahme selbst ist in beiden Fällen gespeichert. Bloßes Anschauen oder
+  Antesten setzt keinen Haken mehr; beim Update rechnet die App alte Haken
+  aus den vorhandenen Aufnahmen einmalig neu.
 - **Pause:** Während einer laufenden Aufnahme erscheint ein Pause-Knopf –
   kurz nachdenken, dann mit „▶ Weiter erzählen" in derselben Aufnahme
   fortfahren. Timer und Zeitstempel zählen die Pause nicht mit.
