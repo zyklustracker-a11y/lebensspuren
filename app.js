@@ -11,6 +11,8 @@ import {
 // Kleine Helfer
 // ---------------------------------------------------------------------------
 
+const APP_VERSION = '1.1.0';
+
 const $ = (sel) => document.querySelector(sel);
 
 function formatClock(ms) {
@@ -435,6 +437,8 @@ function toggleRecording(mode) {
 // wird sofort gespeichert – auf dem iPhone würde die Aufnahme ohnehin stoppen.
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && rec.active) stopRecording('hintergrund');
+  // Zurück in der App: liegengebliebene Sicherungen erneut anstoßen.
+  if (!document.hidden) syncAll();
 });
 window.addEventListener('pagehide', () => {
   if (rec.active) stopRecording('hintergrund');
@@ -917,8 +921,19 @@ function renderAuthArea() {
   }
 }
 
+// Bricht ein hängendes Versprechen nach einer Frist ab, damit die
+// Sicherung nie dauerhaft blockiert.
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(label)), ms)),
+  ]);
+}
+
 // Lädt alle noch nicht gesicherten Aufnahmen hoch – nacheinander,
 // im Hintergrund, mit automatischem neuen Versuch bei Netzproblemen.
+// Ein einzelner fehlgeschlagener oder hängender Upload blockiert
+// die übrigen Aufnahmen nicht.
 async function syncAll() {
   if (!state.cloud || !state.user || state.syncing || !navigator.onLine) return;
   state.syncing = true;
@@ -926,24 +941,37 @@ async function syncAll() {
     const recordings = (await idb.getAll('recordings'))
       .filter((r) => !r.uploaded)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    if (recordings.length === 0) return;
+
+    // Erst das Drive-Token besorgen – klappt das nicht, gar nicht erst starten.
+    const token = await getDriveToken();
+    if (!token) {
+      console.warn('Sicherung wartet: gerade kein Drive-Zugriff (nächster Versuch automatisch).');
+      return;
+    }
 
     for (const recording of recordings) {
       if (!state.user || !navigator.onLine) break;
       state.uploadingIds.add(recording.id);
       refreshSyncBadge(recording);
       try {
-        const driveFileId = await uploadRecording(recording, recording.blob, timestampsText(recording));
+        // Zeitlimit je nach Dateigröße (angenommene Mindestrate ~20 KB/s),
+        // maximal 15 Minuten pro Aufnahme.
+        const timeoutMs = Math.min(120000 + recording.size / 20, 15 * 60 * 1000);
+        const driveFileId = await withTimeout(
+          uploadRecording(recording, recording.blob, timestampsText(recording)),
+          timeoutMs,
+          'upload-zeitlimit'
+        );
         recording.uploaded = true;
         recording.driveFileId = driveFileId;
         await idb.put('recordings', recording);
       } catch (err) {
-        console.warn('Upload später erneut versuchen:', err);
+        console.warn(`Upload von "${recording.title}" später erneut versuchen:`, err);
+      } finally {
         state.uploadingIds.delete(recording.id);
         refreshSyncBadge(recording);
-        break; // Bei Fehlern abbrechen – der nächste Anlass versucht es erneut.
       }
-      state.uploadingIds.delete(recording.id);
-      refreshSyncBadge(recording);
     }
   } finally {
     state.syncing = false;
@@ -996,6 +1024,8 @@ async function registerServiceWorker() {
 }
 
 async function init() {
+  console.info(`Lebensspuren ${APP_VERSION}`);
+  $('#app-version').textContent = `Version ${APP_VERSION}`;
   wireEvents();
   await loadProgress();
   state.questionIndex = Math.min(

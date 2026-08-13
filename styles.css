@@ -194,6 +194,14 @@ button:active {
   margin: 0 0 10px;
 }
 
+.app-version {
+  text-align: center;
+  color: #c4b3a0;
+  font-size: 14px;
+  margin: auto 0 10px;
+  padding-top: 16px;
+}
+
 /* ---------- Frage-Anzeige (Audio-Modus) ---------- */
 
 .question-area {

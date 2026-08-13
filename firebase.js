@@ -164,17 +164,23 @@ export async function getDriveToken({ interactive = false } = {}) {
   if (googleOAuthClientId) {
     try {
       await loadGis();
-      const token = await new Promise((resolve) => {
-        const client = window.google.accounts.oauth2.initTokenClient({
-          client_id: googleOAuthClientId,
-          scope: DRIVE_SCOPE,
-          prompt: '',
-          login_hint: user.email || undefined,
-          callback: (resp) => resolve(resp && resp.access_token ? resp : null),
-          error_callback: () => resolve(null),
-        });
-        client.requestAccessToken({ prompt: interactive ? 'consent' : '' });
-      });
+      // Zeitlimit: Bleibt die Antwort aus (z. B. blockiertes Popup), darf die
+      // Sicherung nicht ewig hängen – dann eben beim nächsten Anlass erneut.
+      const timeoutMs = interactive ? 120000 : 15000;
+      const token = await Promise.race([
+        new Promise((resolve) => {
+          const client = window.google.accounts.oauth2.initTokenClient({
+            client_id: googleOAuthClientId,
+            scope: DRIVE_SCOPE,
+            prompt: '',
+            login_hint: user.email || undefined,
+            callback: (resp) => resolve(resp && resp.access_token ? resp : null),
+            error_callback: () => resolve(null),
+          });
+          client.requestAccessToken({ prompt: interactive ? 'consent' : '' });
+        }),
+        new Promise((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+      ]);
       if (token) {
         setDriveToken(token.access_token, token.expires_in);
         return token.access_token;
