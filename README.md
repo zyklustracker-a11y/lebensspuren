@@ -20,11 +20,10 @@ iPhone (Safari) mit demselben Code.
 | `styles.css` | Gestaltung (große Schrift, große Tippflächen) |
 | `app.js` | App-Logik: Aufnahme, Speicherung, Teilen, Sync |
 | `questions.js` | Fragenkatalog als reine Daten – hier neue Fragen ergänzen |
-| `firebase.js` | Optionale Cloud-Anbindung mit Platzhalter-Konfiguration |
+| `firebase.js` | Optionale Cloud-Anbindung (Firebase-Login, Firestore, Google Drive) |
 | `sw.js` | Service Worker (Offline-Fähigkeit) |
 | `manifest.webmanifest` | PWA-Manifest (Name, Icons, Vollbild) |
 | `firestore.rules` | Security Rules für Firestore |
-| `storage.rules` | Security Rules für Cloud Storage |
 | `icons/` | App-Icons in 192 px und 512 px |
 
 ---
@@ -70,41 +69,55 @@ Danach ist die App unter `https://<projekt>.web.app` erreichbar.
 
 ---
 
-## Firebase einrichten (optional – für die Cloud-Sicherung)
+## Cloud-Sicherung einrichten (optional – ohne Zahlungsmittel)
 
-Die App läuft ohne Firebase vollständig lokal. Mit Firebase kommt der optionale
-Google-Login dazu, der jede Aufnahme automatisch in die Cloud sichert
-(local-first: erst lokal gespeichert, dann im Hintergrund hochgeladen).
+Die App läuft ohne Cloud vollständig lokal. Mit dem optionalen Google-Login
+wird jede Aufnahme automatisch gesichert (local-first: erst lokal gespeichert,
+dann im Hintergrund hochgeladen). Die Sicherung kommt bewusst **ohne Firebase
+Cloud Storage** aus, weil der ein Zahlungsmittel erfordern würde:
+
+- **Firebase Authentication** (Google-Login) – kostenlos im Spark-Tarif
+- **Firestore** für die Metadaten (Titel, Datum, Zeitstempel) – kostenlos
+- **Google Drive** für die Audio-/Videodateien – 15 GB kostenlos im eigenen
+  Google-Konto. Die App legt einen Ordner „Lebensspuren" an und nutzt die
+  eingeschränkte Berechtigung `drive.file` (Zugriff nur auf Dateien, die die
+  App selbst erstellt hat).
+
+Einrichtung Schritt für Schritt:
 
 1. **Projekt anlegen:** [console.firebase.google.com](https://console.firebase.google.com)
-   → „Projekt hinzufügen" → Namen vergeben (z. B. „lebensspuren"). Google
-   Analytics kann aus bleiben.
+   → „Projekt hinzufügen" → Namen vergeben. Google Analytics kann aus bleiben.
 2. **Web-App registrieren:** Auf der Projektübersicht das `</>`-Symbol
    anklicken → Namen vergeben → die angezeigte `firebaseConfig` kopieren.
 3. **Konfiguration eintragen:** In `firebase.js` den deutlich markierten
-   Platzhalter-Block mit den kopierten Werten füllen. Mehr ist im Code nicht
-   zu tun – die App erkennt die Konfiguration beim nächsten Laden automatisch
-   und zeigt den Anmelde-Knopf auf der Startseite.
+   Platzhalter-Block mit den kopierten Werten füllen.
 4. **Google-Anmeldung aktivieren:** Build → Authentication → „Jetzt starten"
    → Tab „Sign-in method" → Google → aktivieren → Support-E-Mail wählen →
    speichern. Unter Authentication → Settings → „Authorized domains" muss die
-   Domain stehen, unter der die App läuft (localhost und Firebase-Domains sind
-   schon eingetragen; GitHub-Pages-Domain ggf. hinzufügen).
+   Domain stehen, unter der die App läuft (z. B. `<name>.github.io`).
 5. **Firestore einrichten:** Build → Firestore Database → „Datenbank erstellen"
    → Produktionsmodus → Region wählen (z. B. `europe-west3` für Frankfurt).
-6. **Cloud Storage einrichten:** Build → Storage → „Jetzt starten" → gleiche
-   Region. **Hinweis:** Storage erfordert den Blaze-Tarif (hinterlegtes
-   Zahlungsmittel), auch wenn du im kostenlosen Kontingent (~5 GB) bleibst.
-   Setze im Google-Cloud-Abrechnungskonto am besten ein Budget mit Warnung.
-7. **Security Rules einspielen:** In der Konsole unter Firestore Database →
-   „Regeln" den Inhalt von `firestore.rules` einfügen und veröffentlichen;
-   unter Storage → „Rules" den Inhalt von `storage.rules` einfügen und
-   veröffentlichen. Damit kann jeder Nutzer ausschließlich seine eigenen
-   Daten lesen und schreiben.
+   Dann unter „Regeln" den Inhalt von `firestore.rules` einfügen und
+   veröffentlichen – damit liest und schreibt jeder Nutzer nur seine eigenen
+   Daten.
+6. **Google Drive API aktivieren:** In der
+   [Google-Cloud-Konsole](https://console.cloud.google.com/apis/library/drive.googleapis.com)
+   das gleiche Projekt auswählen und die „Google Drive API" aktivieren
+   (Knopf „Enable"). Ohne diesen Schritt schlägt der Upload fehl.
+7. **Client-ID eintragen (empfohlen):** Firebase-Konsole → Authentication →
+   Sign-in method → Google → „Web SDK configuration" aufklappen → die
+   **Web client ID** kopieren und in `firebase.js` bei `googleOAuthClientId`
+   eintragen. Damit kann die App die Drive-Berechtigung still erneuern;
+   ohne die ID klappt der Upload nur ungefähr eine Stunde nach jeder
+   frischen Anmeldung (danach hilft der Knopf „Jetzt sichern").
+   Zusätzlich in der [Google-Cloud-Konsole unter „Credentials"](https://console.cloud.google.com/apis/credentials)
+   bei genau diesem OAuth-Client die App-Domain (z. B.
+   `https://<name>.github.io`) als „Authorized JavaScript origin" hinzufügen.
 
 **Gemeinsamer Zugriff für die Familie:** Am einfachsten melden sich Opa und
-Enkel mit demselben Google-Konto an – dann sehen beide dieselben Aufnahmen,
-ohne zusätzliche Freigabelogik.
+Enkel mit demselben Google-Konto an – dann landen die Aufnahmen in einem
+gemeinsamen Drive-Ordner „Lebensspuren", den beide sehen. Alternativ kann
+Opa den Ordner in Drive normal für die Familie freigeben.
 
 ---
 
@@ -192,9 +205,14 @@ Wie gewünscht, hier die wesentlichen Detailentscheidungen:
    heruntergeladen.
 9. **Cloud-Sync ist bewusst nur Upload** (Sicherung), kein Zwei-Wege-Sync –
    local-first, einfach und robust. Status pro Aufnahme: „📱 Nur auf diesem
-   Gerät", „⏳ Wird gerade gesichert", „☁️ In der Cloud gesichert".
+   Gerät", „⏳ Wird gerade gesichert", „☁️ In Google Drive gesichert".
    Ausgelöst wird der Upload nach jeder Aufnahme, beim Anmelden, beim App-Start
-   und sobald das Netz zurückkommt.
+   und sobald das Netz zurückkommt; zusätzlich gibt es in der Übersicht einen
+   Knopf „Jetzt sichern".
+   Mediendateien liegen in Google Drive (Ordner „Lebensspuren", samt
+   Zeitstempel-Textdatei), Metadaten in Firestore – Firebase Cloud Storage
+   wird nicht genutzt, weil es ein hinterlegtes Zahlungsmittel erfordern
+   würde.
 10. **Ohne Firebase-Konfiguration** erscheint schlicht kein Anmelde-Knopf –
     keine Fehlermeldung, keine kaputten Funktionen. Das SDK wird nur bei
     ausgefüllter Konfiguration dynamisch von Googles CDN geladen.

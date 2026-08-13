@@ -4,7 +4,7 @@
 import { ALL_QUESTIONS, CATEGORIES } from './questions.js';
 import {
   isConfigured, initCloud, onUserChanged, signInWithGoogle, signOutUser,
-  uploadRecording, extensionForMime,
+  uploadRecording, extensionForMime, getDriveToken, resumeRedirectSignIn,
 } from './firebase.js';
 
 // ---------------------------------------------------------------------------
@@ -388,7 +388,7 @@ async function finalizeRecording() {
     title: `${isoDateStamp(started)} – ${firstQuestion.text}`,
     timestamps: rec.timestamps,
     uploaded: false,
-    storagePath: null,
+    driveFileId: null,
   };
 
   try {
@@ -644,14 +644,32 @@ async function renderRecordings() {
     return;
   }
 
-  // Freundliche Erinnerung, ungesicherte Aufnahmen zu teilen (wichtig auf dem iPhone).
+  // Freundliche Erinnerung, ungesicherte Aufnahmen zu teilen bzw. zu sichern.
   const unsecured = recordings.filter((r) => !r.uploaded).length;
-  if (unsecured > 0 && !state.user) {
+  if (unsecured > 0) {
     const reminder = document.createElement('p');
     reminder.className = 'share-reminder';
-    reminder.textContent = unsecured === 1
-      ? '💡 Tipp: 1 Aufnahme ist bisher nur auf diesem Gerät. Teile sie mit deiner Familie, damit nichts verloren geht.'
-      : `💡 Tipp: ${unsecured} Aufnahmen sind bisher nur auf diesem Gerät. Teile sie mit deiner Familie, damit nichts verloren geht.`;
+    const countText = unsecured === 1 ? '1 Aufnahme ist' : `${unsecured} Aufnahmen sind`;
+    if (state.user) {
+      reminder.textContent = `💡 ${countText} noch nicht in Google Drive gesichert. `;
+      const syncBtn = document.createElement('button');
+      syncBtn.className = 'action-btn';
+      syncBtn.textContent = '☁️ Jetzt sichern';
+      syncBtn.addEventListener('click', async () => {
+        syncBtn.disabled = true;
+        const token = await getDriveToken({ interactive: true });
+        if (token) {
+          showToast('Die Sicherung läuft im Hintergrund.');
+          syncAll();
+        } else {
+          showToast('Die Sicherung hat nicht geklappt. Versuch es später noch einmal.', 'error', 4000);
+        }
+        syncBtn.disabled = false;
+      });
+      reminder.appendChild(syncBtn);
+    } else {
+      reminder.textContent = `💡 Tipp: ${countText} bisher nur auf diesem Gerät. Teile sie mit deiner Familie, damit nichts verloren geht.`;
+    }
     list.appendChild(reminder);
   }
 
@@ -728,7 +746,7 @@ function buildRecordingCard(recording) {
 function applySyncBadge(badge, recording) {
   if (recording.uploaded) {
     badge.className = 'sync-badge synced';
-    badge.textContent = '☁️ In der Cloud gesichert';
+    badge.textContent = '☁️ In Google Drive gesichert';
   } else if (state.uploadingIds.has(recording.id)) {
     badge.className = 'sync-badge pending';
     badge.textContent = '⏳ Wird gerade gesichert …';
@@ -853,6 +871,7 @@ async function initCloudFeatures() {
   state.cloud = await initCloud();
   if (!state.cloud) return;
   $('#auth-area').classList.remove('hidden');
+  resumeRedirectSignIn(); // iOS-Fallback: Drive-Token nach Redirect-Login einsammeln
   onUserChanged((user) => {
     state.user = user;
     renderAuthArea();
@@ -870,7 +889,7 @@ function renderAuthArea() {
   if (state.user) {
     const status = document.createElement('p');
     status.className = 'auth-status';
-    status.textContent = `☁️ Angemeldet als ${state.user.displayName || state.user.email} – deine Aufnahmen werden automatisch gesichert.`;
+    status.textContent = `☁️ Angemeldet als ${state.user.displayName || state.user.email} – deine Aufnahmen werden automatisch in Google Drive gesichert.`;
     const btn = document.createElement('button');
     btn.className = 'auth-btn';
     btn.textContent = 'Abmelden';
@@ -882,7 +901,7 @@ function renderAuthArea() {
   } else {
     const status = document.createElement('p');
     status.className = 'auth-status';
-    status.textContent = 'Optional: Melde dich an, damit deine Aufnahmen zusätzlich in der Cloud gesichert werden.';
+    status.textContent = 'Optional: Melde dich an, damit deine Aufnahmen zusätzlich in deinem Google Drive gesichert werden.';
     const btn = document.createElement('button');
     btn.className = 'auth-btn';
     btn.textContent = '☁️ Mit Google anmelden';
@@ -913,9 +932,9 @@ async function syncAll() {
       state.uploadingIds.add(recording.id);
       refreshSyncBadge(recording);
       try {
-        const storagePath = await uploadRecording(recording, recording.blob);
+        const driveFileId = await uploadRecording(recording, recording.blob, timestampsText(recording));
         recording.uploaded = true;
-        recording.storagePath = storagePath;
+        recording.driveFileId = driveFileId;
         await idb.put('recordings', recording);
       } catch (err) {
         console.warn('Upload später erneut versuchen:', err);
