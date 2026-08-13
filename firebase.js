@@ -376,13 +376,14 @@ export async function uploadRecording(rec, blob, extras = {}) {
   const safeTitle = rec.title.replace(/[\\/:*?"<>|]/g, '').slice(0, 120);
 
   const fileId = await driveUploadFile(token, `${safeTitle}.${ext}`, rec.mimeType, blob, folderId);
+  const sidecarFileIds = [];
   if (timestampsText) {
-    await driveUploadFile(token, `${safeTitle} – Zeitstempel.txt`, 'text/plain',
-      new Blob([timestampsText], { type: 'text/plain' }), folderId);
+    sidecarFileIds.push(await driveUploadFile(token, `${safeTitle} – Zeitstempel.txt`, 'text/plain',
+      new Blob([timestampsText], { type: 'text/plain' }), folderId));
   }
   if (transcriptText) {
-    await driveUploadFile(token, `${safeTitle} – Transkript.txt`, 'text/plain',
-      new Blob([transcriptText], { type: 'text/plain' }), folderId);
+    sidecarFileIds.push(await driveUploadFile(token, `${safeTitle} – Transkript.txt`, 'text/plain',
+      new Blob([transcriptText], { type: 'text/plain' }), folderId));
   }
 
   const docRef = fb.fsMod.doc(fb.db, 'users', user.uid, 'recordings', rec.id);
@@ -395,9 +396,80 @@ export async function uploadRecording(rec, blob, extras = {}) {
     size: rec.size,
     timestamps: rec.timestamps,
     driveFileId: fileId,
+    sidecarFileIds,
+    deviceId: extras.deviceId || null,
+    deleted: false,
   });
 
   return fileId;
+}
+
+// ---------------------------------------------------------------------------
+// Lösch-Abgleich: Was auf dem Gerät gelöscht wurde, wandert im Drive in den
+// Papierkorb und wird in Firestore als gelöscht markiert (die Familie sieht
+// es dann unter „Gelöschte Aufnahmen" und kann es endgültig entfernen).
+// ---------------------------------------------------------------------------
+
+export async function fetchOwnRecordingDocs() {
+  if (!fb) return [];
+  const user = fb.auth.currentUser;
+  if (!user) return [];
+  const { collection, getDocs } = fb.fsMod;
+  const snap = await getDocs(collection(fb.db, 'users', user.uid, 'recordings'));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+export async function markOwnRecordingDeleted(recordingId) {
+  if (!fb) throw new Error('Cloud nicht initialisiert');
+  const user = fb.auth.currentUser;
+  if (!user) throw new Error('Nicht angemeldet');
+  const { doc, setDoc } = fb.fsMod;
+  await setDoc(doc(fb.db, 'users', user.uid, 'recordings', recordingId),
+    { deleted: true, deletedAt: Date.now() }, { merge: true });
+}
+
+async function trashOneFile(token, fileId) {
+  try {
+    await driveFetch(token, `https://www.googleapis.com/drive/v3/files/${fileId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+      body: JSON.stringify({ trashed: true }),
+    });
+  } catch (err) {
+    if (!String(err).includes('404')) throw err; // schon gelöscht = erledigt
+  }
+}
+
+export async function trashDriveFiles(fileIds) {
+  const token = await getDriveToken();
+  if (!token) throw new Error('kein-drive-token');
+  for (const id of fileIds) await trashOneFile(token, id);
+}
+
+// Für ältere Aufnahmen ohne gespeicherte Beiblatt-IDs: Dateien über den
+// Titel finden. Bewusst streng geprüft, damit „(Teil 2)"-Aufnahmen mit
+// gleichem Fragen-Titel nicht mitgelöscht werden.
+export async function trashDriveFilesByTitle(titlePrefix) {
+  const token = await getDriveToken();
+  if (!token) throw new Error('kein-drive-token');
+  const safe = titlePrefix.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const q = encodeURIComponent(`name contains '${safe}' and trashed=false`);
+  const found = (await (await driveFetch(token,
+    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,mimeType)&pageSize=100`)).json()).files || [];
+  for (const f of found) {
+    if (f.mimeType === 'application/vnd.google-apps.folder') continue;
+    if (f.name.startsWith(`${titlePrefix}.`) || f.name.startsWith(`${titlePrefix} – `)) {
+      await trashOneFile(token, f.id);
+    }
+  }
+}
+
+// Familien-Recht: endgültiges Entfernen eines bereits als gelöscht
+// markierten Eintrags aus der Liste (laut Security Rules nur dann erlaubt).
+export async function deleteMemberRecording(uid, recordingId) {
+  if (!fb) throw new Error('Cloud nicht initialisiert');
+  const { doc, deleteDoc } = fb.fsMod;
+  await deleteDoc(doc(fb.db, 'users', uid, 'recordings', recordingId));
 }
 
 // ---------------------------------------------------------------------------

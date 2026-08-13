@@ -7,10 +7,11 @@ import {
   uploadRecording, extensionForMime, getDriveToken, resumeRedirectSignIn,
   deleteCloudAccount, shareDriveFolderWithEmail, removeDriveFolderShare,
   pushFamilyState, fetchOwnCatalogDoc, queryFamilyMembers, fetchMemberData,
-  writeMemberCatalog,
+  writeMemberCatalog, fetchOwnRecordingDocs, markOwnRecordingDeleted,
+  trashDriveFiles, trashDriveFilesByTitle, deleteMemberRecording,
 } from './firebase.js';
 
-const APP_VERSION = '1.7.0';
+const APP_VERSION = '1.8.0';
 
 // ---------------------------------------------------------------------------
 // Kleine Helfer
@@ -1213,6 +1214,7 @@ function buildRecordingCard(recording) {
     closePlayer();
     showToast('Aufnahme gelöscht');
     renderRecordings();
+    scheduleFamilySync(); // Drive-Papierkorb und Familien-Ansicht nachziehen
   });
 
   actions.append(playBtn, shareBtn, tsBtn, deleteBtn);
@@ -1617,6 +1619,53 @@ function scheduleFamilySync() {
   familySyncTimer = setTimeout(() => syncFamilyData(), 2000);
 }
 
+// Stabile Kennung dieses Geräts – der Lösch-Abgleich fasst nur Aufnahmen
+// an, die von diesem Gerät hochgeladen wurden.
+async function getDeviceId() {
+  let id = await getMeta('deviceId', null);
+  if (!id) {
+    id = crypto.randomUUID
+      ? crypto.randomUUID()
+      : `dev-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    await setMeta('deviceId', id);
+  }
+  return id;
+}
+
+// Aufnahmen, die auf diesem Gerät gelöscht wurden, auch in der Cloud
+// nachziehen: Firestore-Eintrag als gelöscht markieren, Drive-Dateien in
+// den Papierkorb. Klappt Drive gerade nicht, bleibt der Auftrag gemerkt.
+async function reconcileDeletions() {
+  const deviceId = await getDeviceId();
+  const remoteDocs = await fetchOwnRecordingDocs();
+  const localIds = new Set((await idb.getAll('recordings')).map((r) => r.id));
+  const pendingTrash = await getMeta('pendingTrash', []);
+
+  for (const docu of remoteDocs) {
+    if (docu.deleted || localIds.has(docu.id)) continue;
+    if (docu.deviceId && docu.deviceId !== deviceId) continue; // anderes Gerät
+    await markOwnRecordingDeleted(docu.id);
+    const ids = [docu.driveFileId, ...(docu.sidecarFileIds || [])].filter(Boolean);
+    pendingTrash.push({
+      ids,
+      // Altbestände ohne gespeicherte Beiblatt-IDs: über den Titel aufräumen
+      titleFallback: docu.sidecarFileIds ? '' : (docu.title || '').replace(/[\\/:*?"<>|]/g, '').slice(0, 120),
+    });
+  }
+
+  const remaining = [];
+  for (const job of pendingTrash) {
+    try {
+      if (job.ids && job.ids.length) await trashDriveFiles(job.ids);
+      if (job.titleFallback) await trashDriveFilesByTitle(job.titleFallback);
+    } catch (err) {
+      console.warn('Drive-Papierkorb später erneut:', err);
+      remaining.push(job);
+    }
+  }
+  await setMeta('pendingTrash', remaining);
+}
+
 function progressAsObject() {
   const rows = {};
   for (const [qid, row] of state.progress) {
@@ -1663,6 +1712,12 @@ async function syncFamilyData() {
       progress: progressAsObject(),
       pushCatalog,
     });
+
+    try {
+      await reconcileDeletions();
+    } catch (err) {
+      console.warn('Lösch-Abgleich später erneut:', err);
+    }
 
     // Drive-Freigaben sicherstellen – darf nie untergehen. Einmal pro
     // Sitzung wird jede Familien-E-Mail erneut bestätigt (die Drive-API
@@ -1769,6 +1824,7 @@ async function renderFamily() {
     try {
       const data = await loadMemberData(m.uid);
       const answered = data.allQuestions.filter((q) => data.progress[q.qid] && data.progress[q.qid].answered).length;
+      data.activeCount = data.recordings.filter((r) => !r.deleted).length;
       tiles.push({ m, data, answered });
     } catch (err) {
       console.warn('Person nicht ladbar:', err);
@@ -1796,7 +1852,7 @@ async function renderFamily() {
     const sub = document.createElement('span');
     sub.className = 'btn-sub';
     sub.textContent = data
-      ? `${answered} von ${data.allQuestions.length} Fragen beantwortet · ${data.recordings.length} Aufnahmen`
+      ? `${answered} von ${data.allQuestions.length} Fragen beantwortet · ${data.activeCount} Aufnahmen`
       : 'Daten gerade nicht erreichbar';
     label.appendChild(sub);
     tile.append(icon, label);
@@ -1806,6 +1862,49 @@ async function renderFamily() {
     });
     wrap.appendChild(tile);
   }
+}
+
+function buildMemberRecordingCard(uid, r, isDeleted) {
+  const card = document.createElement('article');
+  card.className = 'recording-card';
+  const h = document.createElement('h3');
+  h.className = 'recording-title';
+  h.textContent = `${r.mode === 'video' ? '🎥' : '🎙️'} ${r.title || r.id}`;
+  const meta = document.createElement('p');
+  meta.className = 'recording-meta';
+  meta.textContent = `${r.createdAt ? formatDateTime(r.createdAt) : ''} · ${formatClock(r.durationMs || 0)} Minuten`;
+  if (isDeleted && r.deletedAt) {
+    meta.textContent += ` · gelöscht am ${formatDateTime(new Date(r.deletedAt).toISOString())}`;
+  }
+  card.append(h, meta);
+  if (r.driveFileId) {
+    const open = document.createElement('button');
+    open.className = 'action-btn play';
+    open.textContent = isDeleted ? '▶ Im Papierkorb abspielen' : '▶ In Google Drive abspielen';
+    open.addEventListener('click', () => {
+      window.open(`https://drive.google.com/file/d/${r.driveFileId}/view`, '_blank', 'noopener');
+    });
+    card.appendChild(open);
+  }
+  if (isDeleted) {
+    const purge = document.createElement('button');
+    purge.className = 'action-btn danger';
+    purge.style.marginTop = '10px';
+    purge.textContent = '🗑️ Endgültig entfernen';
+    armButton(purge, 'Wirklich endgültig?', async () => {
+      try {
+        await deleteMemberRecording(uid, r.id);
+        state.memberCache.delete(uid);
+        showToast('Eintrag endgültig entfernt');
+        renderMember();
+      } catch (err) {
+        console.warn('Endgültiges Entfernen fehlgeschlagen:', err);
+        showToast('Das hat nicht geklappt. Versuch es später noch einmal.', 'error', 4000);
+      }
+    });
+    card.appendChild(purge);
+  }
+  return card;
 }
 
 async function mutateMemberCatalog(uid, fn) {
@@ -1840,37 +1939,37 @@ async function renderMember() {
   title.textContent = data.info.name || 'Familien-Mitglied';
   wrap.textContent = '';
 
-  // --- Aufnahmen ---
+  // --- Aufnahmen (aktueller Stand wie auf dem Gerät der Person) ---
+  const active = data.recordings.filter((r) => !r.deleted);
+  const deleted = data.recordings.filter((r) => r.deleted);
+
   const recHeading = document.createElement('h2');
   recHeading.className = 'browse-category';
-  recHeading.textContent = `📚 Aufnahmen (${data.recordings.length})`;
+  recHeading.textContent = `📚 Aufnahmen (${active.length})`;
   wrap.appendChild(recHeading);
-  if (data.recordings.length === 0) {
+  if (active.length === 0) {
     const none = document.createElement('p');
     none.className = 'settings-note';
     none.textContent = 'Noch keine Aufnahmen in der Cloud.';
     wrap.appendChild(none);
   }
-  for (const r of data.recordings) {
-    const card = document.createElement('article');
-    card.className = 'recording-card';
-    const h = document.createElement('h3');
-    h.className = 'recording-title';
-    h.textContent = `${r.mode === 'video' ? '🎥' : '🎙️'} ${r.title || r.id}`;
-    const meta = document.createElement('p');
-    meta.className = 'recording-meta';
-    meta.textContent = `${r.createdAt ? formatDateTime(r.createdAt) : ''} · ${formatClock(r.durationMs || 0)} Minuten`;
-    card.append(h, meta);
-    if (r.driveFileId) {
-      const open = document.createElement('button');
-      open.className = 'action-btn play';
-      open.textContent = '▶ In Google Drive abspielen';
-      open.addEventListener('click', () => {
-        window.open(`https://drive.google.com/file/d/${r.driveFileId}/view`, '_blank', 'noopener');
-      });
-      card.appendChild(open);
+  for (const r of active) {
+    wrap.appendChild(buildMemberRecordingCard(uid, r, false));
+  }
+
+  // --- Gelöschte Aufnahmen (nur für die Familie sichtbar) ---
+  if (deleted.length > 0) {
+    const delHeading = document.createElement('h2');
+    delHeading.className = 'browse-category';
+    delHeading.textContent = `🗑️ Gelöschte Aufnahmen (${deleted.length})`;
+    wrap.appendChild(delHeading);
+    const delNote = document.createElement('p');
+    delNote.className = 'settings-note small';
+    delNote.textContent = 'Diese Aufnahmen wurden auf dem Gerät gelöscht. Sie liegen im Drive-Papierkorb und sind dort noch etwa 30 Tage abspielbar – falls etwas versehentlich gelöscht wurde.';
+    wrap.appendChild(delNote);
+    for (const r of deleted) {
+      wrap.appendChild(buildMemberRecordingCard(uid, r, true));
     }
-    wrap.appendChild(card);
   }
 
   // --- Fragenkatalog mit Fernverwaltung ---
@@ -2032,6 +2131,7 @@ async function syncAll() {
             transcriptText: transcriptText(recording),
             profileName,
             questionFolder: questionFolderName(recording),
+            deviceId: await getDeviceId(),
           }),
           timeoutMs,
           'upload-zeitlimit'

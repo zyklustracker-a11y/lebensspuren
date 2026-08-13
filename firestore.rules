@@ -37,9 +37,12 @@ service cloud.firestore {
       allow read, write: if isOwner(uid);
     }
 
-    // Familie: Aufnahmen-Metadaten lesen.
+    // Familie: Aufnahmen-Metadaten lesen. Einträge, die auf dem Gerät der
+    // Person gelöscht wurden (deleted == true), darf die Familie zusätzlich
+    // endgültig aus der Liste entfernen.
     match /users/{uid}/recordings/{recordingId} {
       allow read: if isFamily(uid);
+      allow delete: if isFamily(uid) && resource.data.deleted == true;
     }
 
     // Familie: Katalog und Fortschritt lesen, Katalog auch schreiben

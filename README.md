@@ -146,6 +146,11 @@ vollen Einblick:
   kommen an, sobald die Person ihre App das nächste Mal mit Internet
   öffnet. Die Mediendateien liegen dabei weiterhin im Drive der
   jeweiligen Person und belegen keinen Speicher des Familien-Mitglieds.
+- **Gelöschte Aufnahmen:** Löscht die erzählende Person eine Aufnahme,
+  wandern die Drive-Dateien automatisch in ihren Papierkorb (dort noch
+  ca. 30 Tage abspielbar), und der Eintrag erscheint in der
+  Familien-Ansicht unter „🗑️ Gelöschte Aufnahmen" – als Sicherheitsnetz
+  gegen Versehen. Die Familie kann den Eintrag dort endgültig entfernen.
 - **Wichtig:** Nach einem Update der App auch die aktuellen
   `firestore.rules` in der Konsole neu veröffentlichen (Firestore
   Database → Regeln) – der Familien-Zugriff braucht die erweiterten
