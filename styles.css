@@ -1,0 +1,671 @@
+/* Lebensspuren – Stylesheet
+   Gestaltung für einen älteren Nutzer: große Schrift, große Tippflächen,
+   hohe Kontraste, keine versteckten Bedienelemente. */
+
+:root {
+  --bg: #fff8f0;
+  --surface: #ffffff;
+  --text: #2b2018;
+  --text-soft: #6b5d50;
+  --accent: #b45309;
+  --accent-soft: #fdebd7;
+  --record: #d32f2f;
+  --record-dark: #b71c1c;
+  --green: #2e7d32;
+  --star: #e6a817;
+  --border: #e8d9c8;
+  --shadow: 0 2px 8px rgba(60, 40, 20, 0.12);
+  --radius: 18px;
+  --tap-min: 56px;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans', sans-serif;
+  font-size: 20px;
+  line-height: 1.45;
+  /* Kein versehentliches Zoomen/Doppeltipp-Zoomen */
+  touch-action: manipulation;
+  overscroll-behavior-y: none;
+}
+
+button {
+  font-family: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+button:active {
+  transform: scale(0.97);
+}
+
+/* ---------- Ansichten (Views) ---------- */
+
+.view {
+  display: none;
+  min-height: 100dvh;
+  flex-direction: column;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+.view.active {
+  display: flex;
+}
+
+.view-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  min-height: 64px;
+}
+
+.back-btn {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--accent);
+  padding: 12px 18px 12px 10px;
+  min-height: var(--tap-min);
+  border-radius: 12px;
+}
+
+.back-btn:active {
+  background: var(--accent-soft);
+}
+
+.view-title {
+  font-size: 22px;
+  font-weight: 700;
+  flex: 1;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- Startseite ---------- */
+
+#view-home {
+  padding-top: max(24px, env(safe-area-inset-top));
+  justify-content: flex-start;
+}
+
+.app-title {
+  font-size: 40px;
+  margin: 24px 16px 4px;
+  text-align: center;
+  color: var(--accent);
+  letter-spacing: 0.5px;
+}
+
+.app-subtitle {
+  margin: 0 24px 28px;
+  text-align: center;
+  color: var(--text-soft);
+  font-size: 19px;
+}
+
+.home-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0 20px;
+}
+
+.big-btn {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  min-height: 84px;
+  padding: 18px 22px;
+  font-size: 24px;
+  font-weight: 600;
+  text-align: left;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.big-btn .btn-icon {
+  font-size: 34px;
+  flex-shrink: 0;
+}
+
+.big-btn.primary {
+  background: var(--record);
+  border-color: var(--record-dark);
+  color: #fff;
+  min-height: 96px;
+  font-size: 26px;
+}
+
+.big-btn .btn-sub {
+  display: block;
+  font-size: 16px;
+  font-weight: 400;
+  opacity: 0.85;
+  margin-top: 2px;
+}
+
+.home-progress {
+  text-align: center;
+  color: var(--text-soft);
+  font-size: 18px;
+  margin: 26px 20px 8px;
+}
+
+.auth-area {
+  margin: 8px 20px 24px;
+  text-align: center;
+}
+
+.auth-btn {
+  font-size: 18px;
+  color: var(--accent);
+  padding: 14px 20px;
+  min-height: var(--tap-min);
+  border-radius: 12px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+}
+
+.auth-status {
+  font-size: 17px;
+  color: var(--text-soft);
+  margin: 0 0 10px;
+}
+
+/* ---------- Frage-Anzeige (Audio-Modus) ---------- */
+
+.question-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 8px 26px;
+  text-align: center;
+}
+
+.category-label {
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--accent);
+  margin: 0 0 14px;
+}
+
+.question-text {
+  font-size: clamp(28px, 7vw, 40px);
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 0;
+}
+
+.question-counter {
+  color: var(--text-soft);
+  font-size: 17px;
+  margin: 18px 0 0;
+}
+
+#waveform {
+  display: block;
+  width: 100%;
+  max-width: 480px;
+  height: 72px;
+  margin: 0 auto;
+}
+
+.timer {
+  text-align: center;
+  font-size: 30px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  min-height: 44px;
+  margin: 4px 0 0;
+  color: var(--record);
+}
+
+.timer.idle {
+  color: var(--text-soft);
+  font-weight: 400;
+  font-size: 19px;
+}
+
+/* ---------- Aufnahme-Steuerung ---------- */
+
+.controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 26px;
+  padding: 14px 16px calc(26px + env(safe-area-inset-bottom));
+}
+
+.nav-btn {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  font-size: 40px;
+  font-weight: 700;
+  color: var(--accent);
+  box-shadow: var(--shadow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 6px;
+}
+
+.record-btn {
+  width: 104px;
+  height: 104px;
+  border-radius: 50%;
+  background: #fff;
+  border: 5px solid var(--record);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 3px 12px rgba(211, 47, 47, 0.35);
+}
+
+.record-btn .record-symbol {
+  width: 74px;
+  height: 74px;
+  border-radius: 50%;
+  background: var(--record);
+  transition: border-radius 0.2s, width 0.2s, height 0.2s;
+}
+
+.record-btn.recording .record-symbol {
+  width: 46px;
+  height: 46px;
+  border-radius: 10px;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
+
+.record-hint {
+  text-align: center;
+  font-size: 18px;
+  color: var(--text-soft);
+  margin: 0 0 4px;
+  min-height: 26px;
+}
+
+/* ---------- Video-Modus ---------- */
+
+#view-video {
+  background: #000;
+  color: #fff;
+  max-width: none;
+  padding: 0;
+}
+
+.video-stage {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+}
+
+#camera-preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #000;
+}
+
+#camera-preview.mirrored {
+  transform: scaleX(-1);
+}
+
+.video-question-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  background: rgba(0, 0, 0, 0.55);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  /* Oben Platz lassen für Zurück- und Kamerawechsel-Knopf */
+  padding: calc(68px + env(safe-area-inset-top)) 18px 14px;
+  text-align: center;
+}
+
+.video-question-bar .category-label {
+  color: #ffd9a0;
+  font-size: 16px;
+  margin-bottom: 6px;
+}
+
+.video-question-bar .question-text {
+  font-size: clamp(22px, 5.5vw, 30px);
+  color: #fff;
+}
+
+.video-topbar {
+  position: absolute;
+  z-index: 3;
+  top: calc(8px + env(safe-area-inset-top));
+  left: 10px;
+}
+
+.video-topbar .back-btn {
+  color: #fff;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 12px;
+  padding: 10px 16px 10px 10px;
+}
+
+.video-controls {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 26px;
+  padding: 16px 16px calc(26px + env(safe-area-inset-bottom));
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.6));
+}
+
+.video-controls .nav-btn {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.video-timer {
+  position: absolute;
+  z-index: 2;
+  top: auto;
+  bottom: 150px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+
+.flip-btn {
+  position: absolute;
+  z-index: 3;
+  top: calc(8px + env(safe-area-inset-top));
+  right: 10px;
+  font-size: 26px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  border-radius: 12px;
+  width: 56px;
+  height: 52px;
+}
+
+/* ---------- Fragen-Modus (Stöbern) ---------- */
+
+#view-browse .browse-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 16px calc(24px + env(safe-area-inset-bottom));
+}
+
+.browse-category {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--accent);
+  margin: 26px 4px 4px;
+}
+
+.browse-category-progress {
+  font-size: 16px;
+  color: var(--text-soft);
+  font-weight: 400;
+  margin-left: 8px;
+}
+
+.question-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  margin-top: 10px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.question-row-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  font-size: 20px;
+  line-height: 1.35;
+  padding: 16px 4px 16px 16px;
+  min-height: 72px;
+}
+
+.question-row-main .check {
+  flex-shrink: 0;
+  width: 30px;
+  font-size: 24px;
+  color: var(--green);
+}
+
+.star-btn {
+  flex-shrink: 0;
+  font-size: 28px;
+  width: 64px;
+  align-self: stretch;
+  color: #c9b8a4;
+}
+
+.star-btn.starred {
+  color: var(--star);
+}
+
+.browse-hint {
+  text-align: center;
+  color: var(--text-soft);
+  font-size: 17px;
+  margin: 10px 20px 0;
+}
+
+/* ---------- Meine Erinnerungen ---------- */
+
+#view-recordings .recordings-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 16px calc(24px + env(safe-area-inset-bottom));
+}
+
+.recordings-empty {
+  text-align: center;
+  color: var(--text-soft);
+  font-size: 20px;
+  margin-top: 60px;
+  padding: 0 30px;
+}
+
+.share-reminder {
+  background: var(--accent-soft);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  font-size: 17px;
+  color: var(--text);
+  margin: 6px 0 4px;
+}
+
+.recording-card {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  margin-top: 14px;
+  padding: 16px;
+}
+
+.recording-title {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0 0 4px;
+  line-height: 1.3;
+}
+
+.recording-meta {
+  font-size: 16px;
+  color: var(--text-soft);
+  margin: 0 0 12px;
+}
+
+.sync-badge {
+  display: inline-block;
+  font-size: 15px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  margin-top: 6px;
+}
+
+.sync-badge.synced {
+  background: #e3f2e4;
+  color: var(--green);
+}
+
+.sync-badge.local {
+  background: #f2ece4;
+  color: var(--text-soft);
+}
+
+.sync-badge.pending {
+  background: #fdf3d7;
+  color: #8a6d1a;
+}
+
+.recording-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.action-btn {
+  flex: 1 1 auto;
+  min-height: var(--tap-min);
+  font-size: 18px;
+  font-weight: 600;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1.5px solid var(--border);
+}
+
+.action-btn.play {
+  background: var(--accent);
+  color: #fff;
+  flex-basis: 100%;
+  font-size: 20px;
+  min-height: 64px;
+}
+
+.action-btn.danger {
+  background: #fdecea;
+  color: var(--record-dark);
+  flex: 0 1 auto;
+}
+
+.recording-player {
+  width: 100%;
+  margin-top: 12px;
+  border-radius: 12px;
+}
+
+video.recording-player {
+  background: #000;
+  max-height: 60vh;
+}
+
+.recordings-toolbar {
+  display: flex;
+  gap: 10px;
+  padding: 4px 16px 8px;
+}
+
+.recordings-toolbar .action-btn {
+  flex: 1;
+}
+
+/* ---------- Sonstiges ---------- */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(36px + env(safe-area-inset-bottom));
+  transform: translateX(-50%) translateY(20px);
+  background: var(--text);
+  color: #fff;
+  font-size: 19px;
+  padding: 14px 24px;
+  border-radius: 14px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s, transform 0.25s;
+  z-index: 100;
+  max-width: min(90vw, 480px);
+  text-align: center;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.toast.success {
+  background: var(--green);
+}
+
+.toast.error {
+  background: var(--record-dark);
+}
+
+.hidden {
+  display: none !important;
+}
+
+@media (min-width: 700px) {
+  #view-video {
+    max-width: none;
+  }
+}

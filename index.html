@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>Lebensspuren</title>
+  <meta name="description" content="Erzähl deine Erinnerungen – die App zeigt dir Fragen und nimmt dich dabei auf.">
+  <meta name="theme-color" content="#fff8f0">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <!-- iOS: installierbar über „Zum Home-Bildschirm" -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Lebensspuren">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- ============ Startseite ============ -->
+  <section id="view-home" class="view active">
+    <h1 class="app-title">Lebensspuren</h1>
+    <p class="app-subtitle">Deine Erinnerungen, erzählt für die Familie</p>
+
+    <nav class="home-buttons">
+      <button id="btn-home-audio" class="big-btn primary">
+        <span class="btn-icon">🎙️</span>
+        <span>Erzählen mit Ton<span class="btn-sub">Frage lesen und einfach sprechen</span></span>
+      </button>
+      <button id="btn-home-video" class="big-btn">
+        <span class="btn-icon">🎥</span>
+        <span>Erzählen mit Video<span class="btn-sub">Mit der Kamera aufnehmen</span></span>
+      </button>
+      <button id="btn-home-browse" class="big-btn">
+        <span class="btn-icon">📖</span>
+        <span>Fragen ansehen<span class="btn-sub">In Ruhe stöbern und merken</span></span>
+      </button>
+      <button id="btn-home-recordings" class="big-btn">
+        <span class="btn-icon">📚</span>
+        <span>Meine Erinnerungen<span class="btn-sub" id="home-rec-count">Noch keine Aufnahmen</span></span>
+      </button>
+    </nav>
+
+    <p id="home-progress" class="home-progress"></p>
+    <div id="auth-area" class="auth-area hidden"></div>
+  </section>
+
+  <!-- ============ Audio-Modus ============ -->
+  <section id="view-audio" class="view">
+    <header class="view-header">
+      <button class="back-btn" data-back>‹ Zurück</button>
+      <span class="view-title">Erzählen mit Ton</span>
+    </header>
+
+    <div class="question-area">
+      <p id="audio-category" class="category-label"></p>
+      <p id="audio-question" class="question-text"></p>
+      <p id="audio-counter" class="question-counter"></p>
+    </div>
+
+    <canvas id="waveform" width="480" height="72" aria-hidden="true"></canvas>
+    <p id="audio-timer" class="timer idle"></p>
+    <p id="audio-hint" class="record-hint">Tippe auf den roten Knopf, um zu starten</p>
+
+    <div class="controls">
+      <button id="audio-prev" class="nav-btn" aria-label="Vorherige Frage">‹</button>
+      <button id="audio-record" class="record-btn" aria-label="Aufnahme starten oder beenden">
+        <span class="record-symbol"></span>
+      </button>
+      <button id="audio-next" class="nav-btn" aria-label="Nächste Frage">›</button>
+    </div>
+  </section>
+
+  <!-- ============ Video-Modus ============ -->
+  <section id="view-video" class="view">
+    <div class="video-stage">
+      <video id="camera-preview" autoplay playsinline muted></video>
+
+      <div class="video-question-bar">
+        <p id="video-category" class="category-label"></p>
+        <p id="video-question" class="question-text"></p>
+      </div>
+
+      <div class="video-topbar">
+        <button class="back-btn" data-back>‹ Zurück</button>
+      </div>
+      <button id="video-flip" class="flip-btn" aria-label="Kamera wechseln">🔄</button>
+
+      <p id="video-timer" class="video-timer"></p>
+
+      <div class="video-controls">
+        <button id="video-prev" class="nav-btn" aria-label="Vorherige Frage">‹</button>
+        <button id="video-record" class="record-btn" aria-label="Aufnahme starten oder beenden">
+          <span class="record-symbol"></span>
+        </button>
+        <button id="video-next" class="nav-btn" aria-label="Nächste Frage">›</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Fragen-Modus (Stöbern) ============ -->
+  <section id="view-browse" class="view">
+    <header class="view-header">
+      <button class="back-btn" data-back>‹ Zurück</button>
+      <span class="view-title">Alle Fragen</span>
+    </header>
+    <p class="browse-hint">Tippe auf eine Frage, um sie zu beantworten.<br>Mit dem Stern ⭐ merkst du dir eine Frage.</p>
+    <div id="browse-list" class="browse-list"></div>
+  </section>
+
+  <!-- ============ Meine Erinnerungen ============ -->
+  <section id="view-recordings" class="view">
+    <header class="view-header">
+      <button class="back-btn" data-back>‹ Zurück</button>
+      <span class="view-title">Meine Erinnerungen</span>
+    </header>
+    <div id="recordings-toolbar" class="recordings-toolbar hidden">
+      <button id="btn-share-all" class="action-btn">📤 Alles teilen</button>
+      <button id="btn-export-all-timestamps" class="action-btn">📝 Alle Zeitstempel</button>
+    </div>
+    <div id="recordings-list" class="recordings-list"></div>
+  </section>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
