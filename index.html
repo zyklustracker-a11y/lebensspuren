@@ -53,6 +53,10 @@
         <span class="btn-icon">📚</span>
         <span>Meine Erinnerungen<span class="btn-sub" id="home-rec-count">Noch keine Aufnahmen</span></span>
       </button>
+      <button id="btn-home-family" class="big-btn hidden">
+        <span class="btn-icon">👨‍👩‍👧‍👦</span>
+        <span>Familie<span class="btn-sub">Aufnahmen und Fragen deiner Liebsten</span></span>
+      </button>
     </nav>
 
     <p id="home-progress" class="home-progress"></p>
@@ -145,6 +149,24 @@
       <span class="view-title">Einstellungen</span>
     </header>
     <div id="settings-content" class="settings-content"></div>
+  </section>
+
+  <!-- ============ Familie: Übersicht ============ -->
+  <section id="view-family" class="view">
+    <header class="view-header">
+      <button class="back-btn" data-back>‹ Zurück</button>
+      <span class="view-title">Familie</span>
+    </header>
+    <div id="family-list" class="home-buttons settings-content"></div>
+  </section>
+
+  <!-- ============ Familie: Person ============ -->
+  <section id="view-member" class="view">
+    <header class="view-header">
+      <button id="member-back" class="back-btn">‹ Familie</button>
+      <span id="member-title" class="view-title">Familien-Mitglied</span>
+    </header>
+    <div id="member-content" class="settings-content"></div>
   </section>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>

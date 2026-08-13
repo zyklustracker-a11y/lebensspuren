@@ -5,10 +5,12 @@ import { CATEGORIES as BASE_CATEGORIES } from './questions.js';
 import {
   isConfigured, initCloud, onUserChanged, signInWithGoogle, signOutUser,
   uploadRecording, extensionForMime, getDriveToken, resumeRedirectSignIn,
-  deleteCloudAccount,
+  deleteCloudAccount, shareDriveFolderWithEmail, removeDriveFolderShare,
+  pushFamilyState, fetchOwnCatalogDoc, queryFamilyMembers, fetchMemberData,
+  writeMemberCatalog,
 } from './firebase.js';
 
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.5.0';
 
 // ---------------------------------------------------------------------------
 // Kleine Helfer
@@ -144,6 +146,10 @@ const state = {
   user: null,                // angemeldeter Google-Nutzer oder null
   syncing: false,
   uploadingIds: new Set(),   // Aufnahmen, die gerade hochgeladen werden
+  familySyncing: false,
+  familyMembers: null,       // Personen, die mich als Familie eingetragen haben
+  memberUid: null,           // aktuell geöffnete Person in der Familien-Ansicht
+  memberCache: new Map(),    // uid → { info, catalog, progress, recordings }
 };
 
 function currentQuestion() {
@@ -184,6 +190,7 @@ async function updateProgress(qid, patch) {
   const row = { ...progressFor(qid), ...patch };
   state.progress.set(qid, row);
   await idb.put('progress', row);
+  scheduleFamilySync();
 }
 
 // ---------------------------------------------------------------------------
@@ -192,28 +199,37 @@ async function updateProgress(qid, patch) {
 
 const EMPTY_CUSTOM = { questions: {}, categories: [] };
 
-async function buildCatalog() {
-  const custom = await getMeta('customCatalog', EMPTY_CUSTOM);
+// Setzt aus dem festen Katalog und eigenen Fragen/Kategorien die
+// vollständige Struktur zusammen – auch für die Familien-Ansicht nutzbar.
+function composeCatalog(custom) {
+  const c = custom || EMPTY_CUSTOM;
   const cats = [];
   for (const base of BASE_CATEGORIES) {
     const questions = base.questions.map((text, i) => ({
       qid: `${base.id}-${i + 1}`, text, custom: false,
     }));
-    for (const q of custom.questions[base.id] || []) {
+    for (const q of c.questions[base.id] || []) {
       questions.push({ qid: q.qid, text: q.text, custom: true });
     }
     cats.push({ id: base.id, title: base.title, icon: base.icon, custom: false, questions });
   }
-  for (const cc of custom.categories) {
-    const questions = (custom.questions[cc.id] || []).map((q) => ({
+  for (const cc of c.categories || []) {
+    const questions = (c.questions[cc.id] || []).map((q) => ({
       qid: q.qid, text: q.text, custom: true,
     }));
     cats.push({ id: cc.id, title: cc.title, icon: cc.icon || '💬', custom: true, questions });
   }
-  state.catalog = cats;
-  state.allQuestions = cats.flatMap((c) => c.questions.map((q) => ({
-    ...q, categoryId: c.id, categoryTitle: c.title, categoryIcon: c.icon,
+  const allQuestions = cats.flatMap((cat) => cat.questions.map((q) => ({
+    ...q, categoryId: cat.id, categoryTitle: cat.title, categoryIcon: cat.icon,
   })));
+  return { catalog: cats, allQuestions };
+}
+
+async function buildCatalog() {
+  const custom = await getMeta('customCatalog', EMPTY_CUSTOM);
+  const { catalog, allQuestions } = composeCatalog(custom);
+  state.catalog = catalog;
+  state.allQuestions = allQuestions;
   state.questionIndex = Math.min(state.questionIndex, Math.max(0, state.allQuestions.length - 1));
 }
 
@@ -221,7 +237,9 @@ async function mutateCustomCatalog(fn) {
   const custom = await getMeta('customCatalog', EMPTY_CUSTOM);
   fn(custom);
   await setMeta('customCatalog', custom);
+  await setMeta('catalogUpdatedAt', Date.now());
   await buildCatalog();
+  scheduleFamilySync();
 }
 
 async function addCustomQuestion(categoryId, text) {
@@ -297,7 +315,7 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () 
 // Ansichten-Wechsel
 // ---------------------------------------------------------------------------
 
-const VIEWS = ['home', 'audio', 'video', 'browse', 'recordings', 'settings'];
+const VIEWS = ['home', 'audio', 'video', 'browse', 'recordings', 'settings', 'family', 'member'];
 
 async function showView(name) {
   // Laufende Aufnahme beim Verlassen immer sichern, nie verwerfen.
@@ -317,6 +335,8 @@ async function showView(name) {
   if (name === 'browse') renderBrowse();
   if (name === 'recordings') renderRecordings();
   if (name === 'settings') renderSettings();
+  if (name === 'family') renderFamily();
+  if (name === 'member') renderMember();
 }
 
 // ---------------------------------------------------------------------------
@@ -675,7 +695,7 @@ function updatePauseUi() {
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && rec.active) stopRecording('hintergrund');
   // Zurück in der App: liegengebliebene Sicherungen erneut anstoßen.
-  if (!document.hidden) syncAll();
+  if (!document.hidden) { syncAll(); syncFamilyData(); }
 });
 window.addEventListener('pagehide', () => {
   if (rec.active) stopRecording('hintergrund');
@@ -845,7 +865,7 @@ function buildQuestionRow(q) {
 
 // Kleines Eingabeformular (eine Zeile + Speichern/Abbrechen), das einen
 // „Hinzufügen"-Knopf ersetzt, solange es offen ist.
-function buildInlineForm(placeholder, onSave) {
+function buildInlineForm(placeholder, onSave, onCancel) {
   const wrap = document.createElement('div');
   wrap.className = 'inline-form';
   const input = document.createElement('input');
@@ -866,18 +886,18 @@ function buildInlineForm(placeholder, onSave) {
     await onSave(text);
   });
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') save.click(); });
-  cancel.addEventListener('click', () => renderBrowse());
+  cancel.addEventListener('click', () => onCancel());
   buttons.append(save, cancel);
   wrap.append(input, buttons);
   return { wrap, input };
 }
 
-function buildAddButton(label, placeholder, onSave) {
+function buildAddButton(label, placeholder, onSave, onCancel = () => renderBrowse()) {
   const btn = document.createElement('button');
   btn.className = 'add-btn';
   btn.textContent = label;
   btn.addEventListener('click', () => {
-    const { wrap, input } = buildInlineForm(placeholder, onSave);
+    const { wrap, input } = buildInlineForm(placeholder, onSave, onCancel);
     btn.replaceWith(wrap);
     input.focus();
   });
@@ -1194,7 +1214,7 @@ function settingsSection(title) {
   return section;
 }
 
-function renderSettings() {
+async function renderSettings() {
   const wrap = $('#settings-content');
   wrap.textContent = '';
 
@@ -1313,6 +1333,60 @@ function renderSettings() {
   }
   wrap.appendChild(account);
 
+  // --- Familie ---
+  const family = settingsSection('Familie');
+  const famNote = document.createElement('p');
+  famNote.className = 'settings-note';
+  famNote.textContent = 'Hier legst du fest, wer aus der Familie mitschauen darf: Der Google-Drive-Ordner mit den Aufnahmen wird automatisch für die eingetragene Person freigegeben, und sie sieht Fortschritt und Aufnahmen in ihrer eigenen Lebensspuren-App.';
+  family.appendChild(famNote);
+
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.placeholder = 'Dein Name, z. B. „Oma Helga"';
+  nameInput.maxLength = 60;
+  nameInput.value = await getMeta('profileName', '');
+  const nameSave = document.createElement('button');
+  nameSave.className = 'action-btn settings-btn';
+  nameSave.textContent = 'Namen speichern';
+  nameSave.addEventListener('click', async () => {
+    await setMeta('profileName', nameInput.value.trim());
+    showToast('✓ Name gespeichert', 'success');
+    syncFamilyData();
+  });
+  family.append(nameInput, nameSave);
+
+  if (state.cloud && state.user) {
+    const emails = await getMeta('familyEmails', []);
+    for (const email of emails) {
+      const row = document.createElement('div');
+      row.className = 'family-email-row';
+      const label = document.createElement('span');
+      label.textContent = email;
+      const remove = document.createElement('button');
+      remove.className = 'row-remove-btn';
+      remove.textContent = '✕';
+      armButton(remove, 'Entfernen?', async () => {
+        await removeFamilyEmail(email);
+        showToast('Zugriff entfernt');
+        renderSettings();
+      });
+      row.append(label, remove);
+      family.appendChild(row);
+    }
+    family.appendChild(buildAddButton('＋ Familien-Mitglied hinzufügen', 'E-Mail-Adresse (Google-Konto) …', async (text) => {
+      const ok = await addFamilyEmail(text);
+      if (ok !== false) renderSettings();
+    }, () => renderSettings()));
+  } else {
+    const hint = document.createElement('p');
+    hint.className = 'settings-note small';
+    hint.textContent = state.cloud
+      ? 'Melde dich zuerst oben unter „Konto & Sicherung" an – dann kannst du hier Familien-Mitglieder eintragen.'
+      : 'Für den Familien-Zugriff muss die Cloud-Sicherung eingerichtet sein.';
+    family.appendChild(hint);
+  }
+  wrap.appendChild(family);
+
   // --- Über die App ---
   const about = settingsSection('Über die App');
   const version = document.createElement('p');
@@ -1320,6 +1394,365 @@ function renderSettings() {
   version.textContent = `Lebensspuren, Version ${APP_VERSION}`;
   about.appendChild(version);
   wrap.appendChild(about);
+}
+
+// ---------------------------------------------------------------------------
+// Familien-Zugriff, Seite der Großeltern: Profil, Freigaben, Katalog-Abgleich
+// ---------------------------------------------------------------------------
+
+let familySyncTimer = null;
+function scheduleFamilySync() {
+  clearTimeout(familySyncTimer);
+  familySyncTimer = setTimeout(() => syncFamilyData(), 2000);
+}
+
+function progressAsObject() {
+  const rows = {};
+  for (const [qid, row] of state.progress) {
+    rows[qid] = { starred: !!row.starred, answered: !!row.answered };
+  }
+  return rows;
+}
+
+// Gleicht Profil, Katalog und Fortschritt mit Firestore ab und holt
+// ausstehende Drive-Ordner-Freigaben nach. Läuft still im Hintergrund;
+// jeder Fehler wird beim nächsten Anlass automatisch erneut versucht.
+async function syncFamilyData() {
+  if (!state.cloud || !state.user || state.familySyncing || !navigator.onLine) return;
+  state.familySyncing = true;
+  try {
+    const name = await getMeta('profileName', '');
+    const familyEmails = await getMeta('familyEmails', []);
+    const localUpdatedAt = await getMeta('catalogUpdatedAt', 0);
+
+    // Katalog-Abgleich: die neuere Fassung gewinnt (Fern-Änderungen der
+    // Familie kommen so aufs Gerät, lokale Änderungen in die Cloud).
+    let pushCatalog = true;
+    try {
+      const remote = await fetchOwnCatalogDoc();
+      if (remote && (remote.updatedAt || 0) > localUpdatedAt) {
+        await setMeta('customCatalog', remote.data || EMPTY_CUSTOM);
+        await setMeta('catalogUpdatedAt', remote.updatedAt);
+        await buildCatalog();
+        renderQuestionDisplays();
+        if (state.view === 'browse') renderBrowse();
+        if (state.view === 'home') renderHome();
+        pushCatalog = false;
+      }
+    } catch (err) {
+      console.warn('Katalog-Abgleich später erneut:', err);
+      pushCatalog = false;
+    }
+
+    await pushFamilyState({
+      name,
+      familyEmails,
+      catalog: await getMeta('customCatalog', EMPTY_CUSTOM),
+      catalogUpdatedAt: await getMeta('catalogUpdatedAt', 0),
+      progress: progressAsObject(),
+      pushCatalog,
+    });
+
+    // Ausstehende Drive-Freigaben nachholen – darf nie untergehen.
+    const shared = await getMeta('sharedFamilyEmails', []);
+    const pending = familyEmails.filter((e) => !shared.includes(e));
+    for (const email of pending) {
+      try {
+        await shareDriveFolderWithEmail(email);
+        shared.push(email);
+        await setMeta('sharedFamilyEmails', shared);
+      } catch (err) {
+        console.warn(`Ordner-Freigabe für ${email} folgt beim nächsten Versuch:`, err);
+        break;
+      }
+    }
+  } catch (err) {
+    console.warn('Familien-Abgleich später erneut:', err);
+  } finally {
+    state.familySyncing = false;
+  }
+}
+
+async function addFamilyEmail(rawEmail) {
+  const email = rawEmail.trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    showToast('Das sieht nicht wie eine E-Mail-Adresse aus.', 'error');
+    return false;
+  }
+  const familyEmails = await getMeta('familyEmails', []);
+  if (!familyEmails.includes(email)) {
+    familyEmails.push(email);
+    await setMeta('familyEmails', familyEmails);
+  }
+  // Sofort versuchen, den Drive-Ordner freizugeben (mit Anmelde-Popup, falls
+  // nötig). Klappt es nicht, holt syncFamilyData es automatisch nach.
+  try {
+    await shareDriveFolderWithEmail(email, { interactive: true });
+    const shared = await getMeta('sharedFamilyEmails', []);
+    if (!shared.includes(email)) {
+      shared.push(email);
+      await setMeta('sharedFamilyEmails', shared);
+    }
+    showToast('✓ Familien-Zugriff eingerichtet, Drive-Ordner ist freigegeben', 'success', 4000);
+  } catch (err) {
+    console.warn('Ordner-Freigabe wird automatisch nachgeholt:', err);
+    showToast('Zugriff gespeichert – die Ordner-Freigabe wird bei der nächsten Sicherung automatisch erledigt.', '', 5000);
+  }
+  syncFamilyData();
+  return true;
+}
+
+async function removeFamilyEmail(email) {
+  const familyEmails = (await getMeta('familyEmails', [])).filter((e) => e !== email);
+  await setMeta('familyEmails', familyEmails);
+  const shared = (await getMeta('sharedFamilyEmails', [])).filter((e) => e !== email);
+  await setMeta('sharedFamilyEmails', shared);
+  try {
+    await removeDriveFolderShare(email);
+  } catch (err) {
+    console.warn('Drive-Freigabe konnte nicht entfernt werden:', err);
+  }
+  syncFamilyData();
+}
+
+// ---------------------------------------------------------------------------
+// Familien-Zugriff, deine Seite: Übersicht und Fernverwaltung
+// ---------------------------------------------------------------------------
+
+async function loadFamilyMembers() {
+  if (!state.cloud || !state.user || !state.user.email) return;
+  try {
+    const members = (await queryFamilyMembers(state.user.email))
+      .filter((m) => m.uid !== state.user.uid);
+    state.familyMembers = members;
+    $('#btn-home-family').classList.toggle('hidden', members.length === 0);
+  } catch (err) {
+    console.warn('Familien-Abfrage fehlgeschlagen:', err);
+  }
+}
+
+async function loadMemberData(uid, force = false) {
+  if (!force && state.memberCache.has(uid)) return state.memberCache.get(uid);
+  const info = (state.familyMembers || []).find((m) => m.uid === uid) || { name: '' };
+  const data = await fetchMemberData(uid);
+  const custom = (data.catalog && data.catalog.data) || EMPTY_CUSTOM;
+  const composed = composeCatalog(custom);
+  const entry = {
+    info,
+    custom,
+    catalogUpdatedAt: (data.catalog && data.catalog.updatedAt) || 0,
+    ...composed,
+    progress: (data.progress && data.progress.rows) || {},
+    recordings: (data.recordings || []).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')),
+  };
+  state.memberCache.set(uid, entry);
+  return entry;
+}
+
+async function renderFamily() {
+  const wrap = $('#family-list');
+  wrap.textContent = '';
+  const loading = document.createElement('p');
+  loading.className = 'settings-note';
+  loading.textContent = 'Lade Familien-Daten …';
+  wrap.appendChild(loading);
+
+  const members = state.familyMembers || [];
+  const tiles = [];
+  for (const m of members) {
+    try {
+      const data = await loadMemberData(m.uid);
+      const answered = data.allQuestions.filter((q) => data.progress[q.qid] && data.progress[q.qid].answered).length;
+      tiles.push({ m, data, answered });
+    } catch (err) {
+      console.warn('Person nicht ladbar:', err);
+      tiles.push({ m, data: null, answered: 0 });
+    }
+  }
+
+  wrap.textContent = '';
+  if (tiles.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'recordings-empty';
+    empty.textContent = 'Noch niemand hat dich als Familien-Mitglied eingetragen.';
+    wrap.appendChild(empty);
+    return;
+  }
+
+  for (const { m, data, answered } of tiles) {
+    const tile = document.createElement('button');
+    tile.className = 'big-btn';
+    const icon = document.createElement('span');
+    icon.className = 'btn-icon';
+    icon.textContent = '👤';
+    const label = document.createElement('span');
+    label.textContent = m.name || 'Ohne Namen';
+    const sub = document.createElement('span');
+    sub.className = 'btn-sub';
+    sub.textContent = data
+      ? `${answered} von ${data.allQuestions.length} Fragen beantwortet · ${data.recordings.length} Aufnahmen`
+      : 'Daten gerade nicht erreichbar';
+    label.appendChild(sub);
+    tile.append(icon, label);
+    tile.addEventListener('click', () => {
+      state.memberUid = m.uid;
+      showView('member');
+    });
+    wrap.appendChild(tile);
+  }
+}
+
+async function mutateMemberCatalog(uid, fn) {
+  const entry = await loadMemberData(uid);
+  const custom = JSON.parse(JSON.stringify(entry.custom));
+  fn(custom);
+  const updatedAt = Date.now();
+  await writeMemberCatalog(uid, custom, updatedAt);
+  state.memberCache.delete(uid);
+  renderMember();
+}
+
+async function renderMember() {
+  const uid = state.memberUid;
+  const wrap = $('#member-content');
+  const title = $('#member-title');
+  if (!uid) { showView('family'); return; }
+  wrap.textContent = '';
+  const loading = document.createElement('p');
+  loading.className = 'settings-note';
+  loading.textContent = 'Lade Daten …';
+  wrap.appendChild(loading);
+
+  let data;
+  try {
+    data = await loadMemberData(uid);
+  } catch (err) {
+    console.warn('Person nicht ladbar:', err);
+    loading.textContent = 'Die Daten sind gerade nicht erreichbar. Versuch es später noch einmal.';
+    return;
+  }
+  title.textContent = data.info.name || 'Familien-Mitglied';
+  wrap.textContent = '';
+
+  // --- Aufnahmen ---
+  const recHeading = document.createElement('h2');
+  recHeading.className = 'browse-category';
+  recHeading.textContent = `📚 Aufnahmen (${data.recordings.length})`;
+  wrap.appendChild(recHeading);
+  if (data.recordings.length === 0) {
+    const none = document.createElement('p');
+    none.className = 'settings-note';
+    none.textContent = 'Noch keine Aufnahmen in der Cloud.';
+    wrap.appendChild(none);
+  }
+  for (const r of data.recordings) {
+    const card = document.createElement('article');
+    card.className = 'recording-card';
+    const h = document.createElement('h3');
+    h.className = 'recording-title';
+    h.textContent = `${r.mode === 'video' ? '🎥' : '🎙️'} ${r.title || r.id}`;
+    const meta = document.createElement('p');
+    meta.className = 'recording-meta';
+    meta.textContent = `${r.createdAt ? formatDateTime(r.createdAt) : ''} · ${formatClock(r.durationMs || 0)} Minuten`;
+    card.append(h, meta);
+    if (r.driveFileId) {
+      const open = document.createElement('button');
+      open.className = 'action-btn play';
+      open.textContent = '▶ In Google Drive abspielen';
+      open.addEventListener('click', () => {
+        window.open(`https://drive.google.com/file/d/${r.driveFileId}/view`, '_blank', 'noopener');
+      });
+      card.appendChild(open);
+    }
+    wrap.appendChild(card);
+  }
+
+  // --- Fragenkatalog mit Fernverwaltung ---
+  for (const cat of data.catalog) {
+    const heading = document.createElement('h2');
+    heading.className = 'browse-category';
+    heading.textContent = `${cat.icon} ${cat.title}`;
+    const answeredCount = cat.questions.filter((q) => data.progress[q.qid] && data.progress[q.qid].answered).length;
+    if (answeredCount > 0) {
+      const prog = document.createElement('span');
+      prog.className = 'browse-category-progress';
+      prog.textContent = `${answeredCount} von ${cat.questions.length} beantwortet`;
+      heading.appendChild(prog);
+    }
+    if (cat.custom) {
+      const removeCat = document.createElement('button');
+      removeCat.className = 'row-remove-btn category-remove';
+      removeCat.textContent = '✕';
+      armButton(removeCat, 'Löschen?', () => mutateMemberCatalog(uid, (c) => {
+        c.categories = (c.categories || []).filter((x) => x.id !== cat.id);
+        delete c.questions[cat.id];
+      }));
+      heading.appendChild(removeCat);
+    }
+    wrap.appendChild(heading);
+
+    for (const q of cat.questions) {
+      const p = data.progress[q.qid] || {};
+      const row = document.createElement('div');
+      row.className = 'question-row';
+      const main = document.createElement('div');
+      main.className = 'question-row-main';
+      const check = document.createElement('span');
+      check.className = 'check';
+      check.textContent = p.answered ? '✓' : '';
+      const label = document.createElement('span');
+      label.textContent = q.text;
+      main.append(check, label);
+      row.appendChild(main);
+      if (q.custom) {
+        const remove = document.createElement('button');
+        remove.className = 'row-remove-btn';
+        remove.textContent = '✕';
+        armButton(remove, 'Löschen?', () => mutateMemberCatalog(uid, (c) => {
+          for (const catId of Object.keys(c.questions)) {
+            c.questions[catId] = c.questions[catId].filter((x) => x.qid !== q.qid);
+          }
+        }));
+        row.appendChild(remove);
+      }
+      if (p.starred) {
+        const star = document.createElement('span');
+        star.className = 'star-btn starred';
+        star.style.pointerEvents = 'none';
+        star.textContent = '★';
+        row.appendChild(star);
+      }
+      wrap.appendChild(row);
+    }
+
+    wrap.appendChild(buildAddButton('＋ Frage aus der Ferne hinzufügen', 'Deine Frage …', async (text) => {
+      await mutateMemberCatalog(uid, (c) => {
+        if (!c.questions[cat.id]) c.questions[cat.id] = [];
+        c.questions[cat.id].push({
+          qid: `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+          text,
+        });
+      });
+      showToast('✓ Frage hinzugefügt – kommt beim nächsten App-Start an', 'success', 3500);
+    }, () => renderMember()));
+  }
+
+  const catHeading = document.createElement('h2');
+  catHeading.className = 'browse-category';
+  catHeading.textContent = '🗂️ Neue Kategorie';
+  wrap.appendChild(catHeading);
+  wrap.appendChild(buildAddButton('＋ Kategorie aus der Ferne hinzufügen', 'Name der Kategorie …', async (text) => {
+    await mutateMemberCatalog(uid, (c) => {
+      if (!c.categories) c.categories = [];
+      c.categories.push({ id: `cc-${Date.now().toString(36)}`, title: text });
+    });
+    showToast('✓ Kategorie hinzugefügt', 'success');
+  }, () => renderMember()));
+
+  const hint = document.createElement('p');
+  hint.className = 'settings-note small';
+  hint.textContent = 'Änderungen am Katalog kommen auf dem Gerät der Person an, sobald sie die App das nächste Mal mit Internet öffnet.';
+  wrap.appendChild(hint);
 }
 
 // ---------------------------------------------------------------------------
@@ -1333,7 +1766,15 @@ async function initCloudFeatures() {
   resumeRedirectSignIn(); // iOS-Fallback: Drive-Token nach Redirect-Login einsammeln
   onUserChanged((user) => {
     state.user = user;
-    if (user) syncAll();
+    if (user) {
+      syncAll();
+      syncFamilyData();
+      loadFamilyMembers();
+    } else {
+      state.familyMembers = null;
+      state.memberCache.clear();
+      $('#btn-home-family').classList.add('hidden');
+    }
     if (state.view === 'settings') renderSettings();
     if (state.view === 'recordings') renderRecordings();
   });
@@ -1405,7 +1846,7 @@ function refreshSyncBadge(recording) {
   if (badge) applySyncBadge(badge, recording);
 }
 
-window.addEventListener('online', () => syncAll());
+window.addEventListener('online', () => { syncAll(); syncFamilyData(); });
 
 // ---------------------------------------------------------------------------
 // Start
@@ -1416,7 +1857,9 @@ function wireEvents() {
   $('#btn-home-video').addEventListener('click', () => { continueAtNextUnanswered(); showView('video'); });
   $('#btn-home-browse').addEventListener('click', () => showView('browse'));
   $('#btn-home-recordings').addEventListener('click', () => showView('recordings'));
+  $('#btn-home-family').addEventListener('click', () => showView('family'));
   $('#btn-settings').addEventListener('click', () => showView('settings'));
+  $('#member-back').addEventListener('click', () => showView('family'));
 
   document.querySelectorAll('[data-back]').forEach((btn) => {
     btn.addEventListener('click', () => showView('home'));

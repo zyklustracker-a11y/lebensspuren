@@ -1,12 +1,52 @@
 rules_version = '2';
 
-// Firestore-Regeln für „Lebensspuren":
-// Jeder angemeldete Nutzer darf ausschließlich seine eigenen Daten
-// unter /users/{eigene UID}/... lesen und schreiben. Alles andere ist gesperrt.
+// Firestore-Regeln für „Lebensspuren" mit Familien-Zugriff:
+// - Jeder Nutzer darf seine eigenen Daten unter /users/{eigene UID}/... und
+//   sein Freigabe-Dokument unter /freigaben/{eigene UID} lesen und schreiben.
+// - Familien-Mitglieder (E-Mail steht in familyEmails des Freigabe-Dokuments)
+//   dürfen die Daten der Person LESEN und ausschließlich den Fragenkatalog
+//   (users/{uid}/app/katalog) auch SCHREIBEN.
+// Wichtig: Die App speichert Familien-E-Mails immer kleingeschrieben.
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    function isFamily(uid) {
+      return request.auth != null
+        && request.auth.token.email != null
+        && request.auth.token.email.lower() in
+           get(/databases/$(database)/documents/freigaben/$(uid)).data.familyEmails;
+    }
+
+    // Freigabe-Dokumente: Name + Familienliste pro Person.
+    // Die Familien-Ansicht findet Personen über die Abfrage
+    // where('familyEmails', 'array-contains', <eigene E-Mail>).
+    match /freigaben/{uid} {
+      allow read: if isOwner(uid)
+        || (request.auth != null
+            && request.auth.token.email != null
+            && request.auth.token.email in resource.data.familyEmails);
+      allow write: if isOwner(uid);
+    }
+
+    // Eigene Daten: voller Zugriff.
     match /users/{uid}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read, write: if isOwner(uid);
+    }
+
+    // Familie: Aufnahmen-Metadaten lesen.
+    match /users/{uid}/recordings/{recordingId} {
+      allow read: if isFamily(uid);
+    }
+
+    // Familie: Katalog und Fortschritt lesen, Katalog auch schreiben
+    // (Fragen aus der Ferne pflegen).
+    match /users/{uid}/app/{docId} {
+      allow read: if isFamily(uid);
+      allow write: if isFamily(uid) && docId == 'katalog';
     }
   }
 }

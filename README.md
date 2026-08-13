@@ -114,10 +114,34 @@ Einrichtung Schritt für Schritt:
    bei genau diesem OAuth-Client die App-Domain (z. B.
    `https://<name>.github.io`) als „Authorized JavaScript origin" hinzufügen.
 
-**Gemeinsamer Zugriff für die Familie:** Am einfachsten melden sich Opa und
-Enkel mit demselben Google-Konto an – dann landen die Aufnahmen in einem
-gemeinsamen Drive-Ordner „Lebensspuren", den beide sehen. Alternativ kann
-Opa den Ordner in Drive normal für die Familie freigeben.
+## Familien-Zugriff (Fernverwaltung durch die Enkel)
+
+Jede Person nutzt ihr eigenes Google-Konto – die Familie bekommt trotzdem
+vollen Einblick:
+
+- **Einrichten (einmalig, auf dem Gerät der erzählenden Person):**
+  Einstellungen → „Familie" → Profilname eintragen (z. B. „Oma Helga") und
+  unter „Familien-Mitglied hinzufügen" die Google-E-Mail des Enkels.
+  Die App gibt daraufhin **automatisch** den Drive-Ordner „Lebensspuren"
+  für diese E-Mail frei; klappt das gerade nicht (offline, noch kein
+  Ordner), holt sie es bei der nächsten Sicherung selbsttätig nach.
+- **Für das Familien-Mitglied:** In der eigenen Lebensspuren-App mit dem
+  eingetragenen Google-Konto anmelden – auf der Startseite erscheint
+  automatisch der Bereich **„Familie"**: pro Person Fortschritt
+  („12 von 35 beantwortet"), alle Aufnahmen mit Abspiel-Link (Google
+  Drive) und der komplette Fragenkatalog. Eigene Fragen und Kategorien
+  lassen sich **aus der Ferne** hinzufügen und entfernen; die Änderungen
+  kommen an, sobald die Person ihre App das nächste Mal mit Internet
+  öffnet. Die Mediendateien liegen dabei weiterhin im Drive der
+  jeweiligen Person und belegen keinen Speicher des Familien-Mitglieds.
+- **Wichtig:** Nach einem Update der App auch die aktuellen
+  `firestore.rules` in der Konsole neu veröffentlichen (Firestore
+  Database → Regeln) – der Familien-Zugriff braucht die erweiterten
+  Regeln aus dieser Datei.
+- **Archiv sichern:** Freigabe ist Zugriff, nicht Besitz. Lade den
+  freigegebenen Ordner gelegentlich auf einen eigenen Rechner herunter –
+  falls das Konto der erzählenden Person eines Tages gelöscht wird,
+  bleibt so alles erhalten.
 
 ---
 
@@ -257,3 +281,9 @@ Wie gewünscht, hier die wesentlichen Detailentscheidungen:
 17. **„Konto in dieser App löschen"** entfernt die Firestore-Metadaten und
     den Firebase-Auth-Nutzer; lokale Aufnahmen und die Drive-Dateien bleiben
     bewusst erhalten (sie gehören dem Google-Konto, nicht der App).
+18. **Familien-Zugriff nach dem Freigabe-Modell:** Medien bleiben im Drive
+    der erzählenden Person (Ordner-Freigabe per Drive-API, automatisch und
+    mit Nachhol-Logik), Metadaten in Firestore mit E-Mail-basierter
+    Familienliste. Familien-Mitglieder dürfen lesen und nur den
+    Fragenkatalog schreiben; Fortschritt und Aufnahmen kann nur die Person
+    selbst verändern. Katalog-Konflikte löst „die neuere Fassung gewinnt".

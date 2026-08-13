@@ -952,6 +952,23 @@ video.recording-player {
   margin-top: 10px;
 }
 
+.family-email-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--surface-2);
+  border-radius: 12px;
+  padding: 10px 6px 10px 14px;
+  margin-top: 10px;
+  font-size: 17px;
+  word-break: break-all;
+}
+
+.settings-section input[type="text"] {
+  margin-top: 6px;
+}
+
 .choice-row {
   display: flex;
   gap: 10px;

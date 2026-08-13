@@ -134,6 +134,11 @@ export async function deleteCloudAccount() {
   const col = fb.fsMod.collection(fb.db, 'users', user.uid, 'recordings');
   const snapshot = await fb.fsMod.getDocs(col);
   await Promise.all(snapshot.docs.map((d) => fb.fsMod.deleteDoc(d.ref)));
+  await Promise.all([
+    fb.fsMod.deleteDoc(fb.fsMod.doc(fb.db, 'users', user.uid, 'app', 'katalog')).catch(() => {}),
+    fb.fsMod.deleteDoc(fb.fsMod.doc(fb.db, 'users', user.uid, 'app', 'fortschritt')).catch(() => {}),
+    fb.fsMod.deleteDoc(fb.fsMod.doc(fb.db, 'freigaben', user.uid)).catch(() => {}),
+  ]);
 
   driveToken = null;
   await fb.authMod.deleteUser(user);
@@ -299,6 +304,117 @@ export async function uploadRecording(rec, blob, timestampsText) {
   });
 
   return fileId;
+}
+
+// ---------------------------------------------------------------------------
+// Familien-Zugriff: Drive-Ordner freigeben, Zustand in Firestore spiegeln
+// ---------------------------------------------------------------------------
+
+// Gibt den „Lebensspuren"-Ordner für ein Familienmitglied frei (Leserechte).
+// Legt den Ordner an, falls er noch nicht existiert.
+export async function shareDriveFolderWithEmail(email, { interactive = false } = {}) {
+  const token = await getDriveToken({ interactive });
+  if (!token) throw new Error('kein-drive-token');
+  const folderId = await ensureDriveFolder(token);
+  await driveFetch(token,
+    `https://www.googleapis.com/drive/v3/files/${folderId}/permissions?sendNotificationEmail=false`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+      body: JSON.stringify({ role: 'reader', type: 'user', emailAddress: email }),
+    });
+  return folderId;
+}
+
+// Entzieht einem Familienmitglied die Ordner-Freigabe (best effort).
+export async function removeDriveFolderShare(email) {
+  const token = await getDriveToken({});
+  if (!token) return false;
+  const folderId = await ensureDriveFolder(token);
+  const res = await (await driveFetch(token,
+    `https://www.googleapis.com/drive/v3/files/${folderId}/permissions?fields=permissions(id,emailAddress)`)).json();
+  const perm = (res.permissions || [])
+    .find((p) => (p.emailAddress || '').toLowerCase() === email.toLowerCase());
+  if (perm) {
+    await driveFetch(token,
+      `https://www.googleapis.com/drive/v3/files/${folderId}/permissions/${perm.id}`,
+      { method: 'DELETE' });
+  }
+  return true;
+}
+
+// Spiegelt Profil, Fragenkatalog und Fortschritt des angemeldeten Nutzers
+// nach Firestore, damit Familienmitglieder (laut Security Rules) mitlesen
+// und den Katalog aus der Ferne pflegen können.
+export async function pushFamilyState({ name, familyEmails, catalog, catalogUpdatedAt, progress, pushCatalog }) {
+  if (!fb) return;
+  const user = fb.auth.currentUser;
+  if (!user) return;
+  const { doc, setDoc } = fb.fsMod;
+  await setDoc(doc(fb.db, 'freigaben', user.uid), {
+    ownerUid: user.uid,
+    name: name || '',
+    familyEmails: familyEmails || [],
+    updatedAt: Date.now(),
+  });
+  if (pushCatalog) {
+    await setDoc(doc(fb.db, 'users', user.uid, 'app', 'katalog'), {
+      data: catalog,
+      updatedAt: catalogUpdatedAt || 0,
+    });
+  }
+  await setDoc(doc(fb.db, 'users', user.uid, 'app', 'fortschritt'), {
+    rows: progress || {},
+    updatedAt: Date.now(),
+  });
+}
+
+// Holt den eigenen Katalog aus Firestore (für den Abgleich zwischen
+// Gerät und Fern-Änderungen der Familie). null, wenn keiner existiert.
+export async function fetchOwnCatalogDoc() {
+  if (!fb) return null;
+  const user = fb.auth.currentUser;
+  if (!user) return null;
+  const { doc, getDoc } = fb.fsMod;
+  const snap = await getDoc(doc(fb.db, 'users', user.uid, 'app', 'katalog'));
+  return snap.exists() ? snap.data() : null;
+}
+
+// Findet alle Personen, die die angegebene E-Mail als Familienmitglied
+// eingetragen haben (Grundlage der Familien-Ansicht).
+export async function queryFamilyMembers(email) {
+  if (!fb) return [];
+  const { collection, query, where, getDocs } = fb.fsMod;
+  const snap = await getDocs(query(
+    collection(fb.db, 'freigaben'),
+    where('familyEmails', 'array-contains', email.toLowerCase())
+  ));
+  return snap.docs.map((d) => ({ uid: d.id, ...d.data() }));
+}
+
+// Lädt Katalog, Fortschritt und Aufnahmen-Metadaten einer Person.
+export async function fetchMemberData(uid) {
+  if (!fb) throw new Error('Cloud nicht initialisiert');
+  const { doc, getDoc, collection, getDocs } = fb.fsMod;
+  const [kat, fort, recs] = await Promise.all([
+    getDoc(doc(fb.db, 'users', uid, 'app', 'katalog')),
+    getDoc(doc(fb.db, 'users', uid, 'app', 'fortschritt')),
+    getDocs(collection(fb.db, 'users', uid, 'recordings')),
+  ]);
+  return {
+    catalog: kat.exists() ? kat.data() : null,
+    progress: fort.exists() ? fort.data() : null,
+    recordings: recs.docs.map((d) => ({ id: d.id, ...d.data() })),
+  };
+}
+
+// Schreibt den Katalog einer Person aus der Ferne (Familien-Recht laut Rules).
+export async function writeMemberCatalog(uid, catalogData, updatedAt) {
+  if (!fb) throw new Error('Cloud nicht initialisiert');
+  const { doc, setDoc } = fb.fsMod;
+  await setDoc(doc(fb.db, 'users', uid, 'app', 'katalog'), {
+    data: catalogData,
+    updatedAt,
+  });
 }
 
 export function extensionForMime(mimeType) {
