@@ -11,12 +11,12 @@
 // ║  ohne Anmeldung, ohne Cloud, ohne Fehlermeldung.                 ║
 // ╚══════════════════════════════════════════════════════════════════╝
 export const firebaseConfig = {
-  apiKey: '',
-  authDomain: '',
-  projectId: '',
-  storageBucket: '',
-  messagingSenderId: '',
-  appId: '',
+  apiKey: 'AIzaSyBPBXUJhdaMXb2wWQ82eK-EIxKylv8f4bE',
+  authDomain: 'lebensspuren.firebaseapp.com',
+  projectId: 'lebensspuren',
+  storageBucket: 'lebensspuren.firebasestorage.app',
+  messagingSenderId: '830956130018',
+  appId: '1:830956130018:web:01fc468d90dc87d0a118bb',
 };
 // ╚═══════════════ ENDE DES KONFIGURATIONS-BLOCKS ══════════════════╝
 
