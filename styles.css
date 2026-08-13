@@ -1,23 +1,148 @@
 /* Lebensspuren – Stylesheet
    Gestaltung für einen älteren Nutzer: große Schrift, große Tippflächen,
-   hohe Kontraste, keine versteckten Bedienelemente. */
+   hohe Kontraste, keine versteckten Bedienelemente.
+
+   Drei Designs (Indigo, Bernstein, Salbei), jeweils hell und dunkel.
+   Ausgewählt wird über data-design und data-mode am <html>-Element,
+   umschaltbar in den Einstellungen. */
+
+/* ---------- Design-Farben ---------- */
 
 :root {
-  --bg: #fff8f0;
+  /* Indigo, hell (Standard): klar und modern */
+  --bg: #fafafa;
   --surface: #ffffff;
-  --text: #2b2018;
-  --text-soft: #6b5d50;
-  --accent: #b45309;
-  --accent-soft: #fdebd7;
-  --record: #d32f2f;
-  --record-dark: #b71c1c;
-  --green: #2e7d32;
-  --star: #e6a817;
-  --border: #e8d9c8;
-  --shadow: 0 2px 8px rgba(60, 40, 20, 0.12);
+  --surface-2: #f1f1f5;
+  --text: #191b21;
+  --text-soft: #5f636e;
+  --accent: #4f46e5;
+  --accent-contrast: #ffffff;
+  --accent-soft: #edeefd;
+  --border: #e5e5ec;
+  --record: #e11d48;
+  --record-soft: #fde8ed;
+  --green: #15803d;
+  --green-soft: #e2f4e6;
+  --star: #d99e00;
+  --star-muted: #c9c9d2;
+  --pending-soft: #fdf3d0;
+  --pending-text: #8a6d1a;
+  --shadow: 0 1px 3px rgba(20, 20, 40, 0.07), 0 4px 16px rgba(20, 20, 40, 0.05);
   --radius: 18px;
   --tap-min: 56px;
+  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans', sans-serif;
+  --font-display: var(--font-body);
 }
+
+:root[data-design="modern"][data-mode="dark"] {
+  --bg: #101116;
+  --surface: #1a1c24;
+  --surface-2: #232631;
+  --text: #eeeef4;
+  --text-soft: #9ea3b0;
+  --accent: #8b90f8;
+  --accent-contrast: #14152b;
+  --accent-soft: #272b4d;
+  --border: #2b2e3a;
+  --record: #f4436c;
+  --record-soft: #3d1a26;
+  --green: #4ade80;
+  --green-soft: #17301f;
+  --star: #eac545;
+  --star-muted: #4a4d5a;
+  --pending-soft: #3a3220;
+  --pending-text: #e3c56c;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+
+:root[data-design="warm"] {
+  --bg: #faf6ef;
+  --surface: #fffdf8;
+  --surface-2: #f3ecdf;
+  --text: #291f16;
+  --text-soft: #71624f;
+  --accent: #b45309;
+  --accent-contrast: #ffffff;
+  --accent-soft: #f6e8d2;
+  --border: #e9ddc9;
+  --record: #c62f2f;
+  --record-soft: #f9e5e0;
+  --green: #37702f;
+  --green-soft: #e8f1e0;
+  --star: #d99e00;
+  --star-muted: #cfc2ac;
+  --pending-soft: #f8eecb;
+  --pending-text: #8a6d1a;
+  --shadow: 0 1px 3px rgba(80, 55, 25, 0.08), 0 5px 18px rgba(80, 55, 25, 0.06);
+  --radius: 20px;
+  --font-display: 'Iowan Old Style', 'Palatino Linotype', Georgia, 'Times New Roman', serif;
+}
+
+:root[data-design="warm"][data-mode="dark"] {
+  --bg: #17120d;
+  --surface: #221b14;
+  --surface-2: #2c241a;
+  --text: #f4ece0;
+  --text-soft: #b3a28b;
+  --accent: #e6a34f;
+  --accent-contrast: #211505;
+  --accent-soft: #3b2c17;
+  --border: #372d20;
+  --record: #ef6351;
+  --record-soft: #421f1a;
+  --green: #8bc878;
+  --green-soft: #24301c;
+  --star: #eac545;
+  --star-muted: #55483a;
+  --pending-soft: #3b3320;
+  --pending-text: #e3c56c;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.45), 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+:root[data-design="natur"] {
+  --bg: #f5f7f3;
+  --surface: #fdfefc;
+  --surface-2: #eaefe8;
+  --text: #1d251f;
+  --text-soft: #5c685f;
+  --accent: #3f7352;
+  --accent-contrast: #ffffff;
+  --accent-soft: #e2eee5;
+  --border: #dde4dc;
+  --record: #d34a4a;
+  --record-soft: #fae5e3;
+  --green: #2f7d43;
+  --green-soft: #e0f0e2;
+  --star: #cf9a06;
+  --star-muted: #c3ccc2;
+  --pending-soft: #f4eccb;
+  --pending-text: #82691c;
+  --shadow: 0 1px 3px rgba(30, 50, 35, 0.07), 0 5px 18px rgba(30, 50, 35, 0.05);
+  --radius: 22px;
+}
+
+:root[data-design="natur"][data-mode="dark"] {
+  --bg: #121713;
+  --surface: #1b211c;
+  --surface-2: #242c25;
+  --text: #ecf1ec;
+  --text-soft: #9dab9f;
+  --accent: #82b592;
+  --accent-contrast: #0f1a12;
+  --accent-soft: #24372a;
+  --border: #2b342c;
+  --record: #ef6a5e;
+  --record-soft: #3c211d;
+  --green: #7cc088;
+  --green-soft: #1d3122;
+  --star: #e0bd4a;
+  --star-muted: #48534a;
+  --pending-soft: #383220;
+  --pending-text: #ddc069;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.45), 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+/* ---------- Grundlagen ---------- */
 
 * {
   box-sizing: border-box;
@@ -33,12 +158,12 @@ body {
   min-height: 100%;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans', sans-serif;
+  font-family: var(--font-body);
   font-size: 20px;
   line-height: 1.45;
-  /* Kein versehentliches Zoomen/Doppeltipp-Zoomen */
   touch-action: manipulation;
   overscroll-behavior-y: none;
+  transition: background-color 0.25s, color 0.25s;
 }
 
 button {
@@ -52,6 +177,24 @@ button {
 
 button:active {
   transform: scale(0.97);
+}
+
+input[type="text"] {
+  font-family: inherit;
+  font-size: 20px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  width: 100%;
+  min-height: var(--tap-min);
+}
+
+input[type="text"]:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: transparent;
 }
 
 /* ---------- Ansichten (Views) ---------- */
@@ -78,7 +221,7 @@ button:active {
 }
 
 .back-btn {
-  font-size: 22px;
+  font-size: 21px;
   font-weight: 600;
   color: var(--accent);
   padding: 12px 18px 12px 10px;
@@ -93,6 +236,7 @@ button:active {
 .view-title {
   font-size: 22px;
   font-weight: 700;
+  font-family: var(--font-display);
   flex: 1;
   text-align: left;
   white-space: nowrap;
@@ -105,14 +249,33 @@ button:active {
 #view-home {
   padding-top: max(24px, env(safe-area-inset-top));
   justify-content: flex-start;
+  position: relative;
+}
+
+.gear-btn {
+  position: absolute;
+  top: max(14px, env(safe-area-inset-top));
+  right: 14px;
+  font-size: 26px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  box-shadow: var(--shadow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .app-title {
-  font-size: 40px;
-  margin: 24px 16px 4px;
+  font-size: 42px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  margin: 30px 16px 4px;
   text-align: center;
-  color: var(--accent);
-  letter-spacing: 0.5px;
+  color: var(--text);
+  letter-spacing: 0.2px;
 }
 
 .app-subtitle {
@@ -125,7 +288,7 @@ button:active {
 .home-buttons {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
   padding: 0 20px;
 }
 
@@ -136,33 +299,33 @@ button:active {
   width: 100%;
   min-height: 84px;
   padding: 18px 22px;
-  font-size: 24px;
-  font-weight: 600;
+  font-size: 23px;
+  font-weight: 650;
   text-align: left;
   background: var(--surface);
-  border: 2px solid var(--border);
+  border: 1.5px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
 }
 
 .big-btn .btn-icon {
-  font-size: 34px;
+  font-size: 32px;
   flex-shrink: 0;
 }
 
 .big-btn.primary {
-  background: var(--record);
-  border-color: var(--record-dark);
-  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
   min-height: 96px;
-  font-size: 26px;
+  font-size: 25px;
 }
 
 .big-btn .btn-sub {
   display: block;
   font-size: 16px;
   font-weight: 400;
-  opacity: 0.85;
+  opacity: 0.8;
   margin-top: 2px;
 }
 
@@ -170,36 +333,7 @@ button:active {
   text-align: center;
   color: var(--text-soft);
   font-size: 18px;
-  margin: 26px 20px 8px;
-}
-
-.auth-area {
-  margin: 8px 20px 24px;
-  text-align: center;
-}
-
-.auth-btn {
-  font-size: 18px;
-  color: var(--accent);
-  padding: 14px 20px;
-  min-height: var(--tap-min);
-  border-radius: 12px;
-  border: 1.5px solid var(--border);
-  background: var(--surface);
-}
-
-.auth-status {
-  font-size: 17px;
-  color: var(--text-soft);
-  margin: 0 0 10px;
-}
-
-.app-version {
-  text-align: center;
-  color: #c4b3a0;
-  font-size: 14px;
-  margin: auto 0 10px;
-  padding-top: 16px;
+  margin: 26px 20px 24px;
 }
 
 /* ---------- Frage-Anzeige (Audio-Modus) ---------- */
@@ -214,16 +348,18 @@ button:active {
 }
 
 .category-label {
-  font-size: 19px;
+  font-size: 18px;
   font-weight: 600;
   color: var(--accent);
   margin: 0 0 14px;
+  letter-spacing: 0.2px;
 }
 
 .question-text {
   font-size: clamp(28px, 7vw, 40px);
+  font-family: var(--font-display);
   font-weight: 700;
-  line-height: 1.3;
+  line-height: 1.28;
   margin: 0;
 }
 
@@ -272,8 +408,8 @@ button:active {
   height: 76px;
   border-radius: 50%;
   background: var(--surface);
-  border: 2px solid var(--border);
-  font-size: 40px;
+  border: 1.5px solid var(--border);
+  font-size: 38px;
   font-weight: 700;
   color: var(--accent);
   box-shadow: var(--shadow);
@@ -287,12 +423,12 @@ button:active {
   width: 104px;
   height: 104px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--surface);
   border: 5px solid var(--record);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 3px 12px rgba(211, 47, 47, 0.35);
+  box-shadow: 0 3px 14px color-mix(in srgb, var(--record) 40%, transparent);
 }
 
 .record-btn .record-symbol {
@@ -323,7 +459,7 @@ button:active {
   min-height: 26px;
 }
 
-/* ---------- Video-Modus ---------- */
+/* ---------- Video-Modus (immer dunkel, unabhängig vom Design) ---------- */
 
 #view-video {
   background: #000;
@@ -407,12 +543,21 @@ button:active {
 
 .video-controls .nav-btn {
   background: rgba(255, 255, 255, 0.92);
+  color: #333;
+}
+
+.video-controls .record-btn {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: #e11d48;
+}
+
+.video-controls .record-symbol {
+  background: #e11d48;
 }
 
 .video-timer {
   position: absolute;
   z-index: 2;
-  top: auto;
   bottom: 150px;
   left: 0;
   right: 0;
@@ -446,23 +591,27 @@ button:active {
 }
 
 .browse-category {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
   font-size: 22px;
   font-weight: 700;
-  color: var(--accent);
-  margin: 26px 4px 4px;
+  font-family: var(--font-display);
+  color: var(--text);
+  margin: 30px 4px 4px;
 }
 
 .browse-category-progress {
-  font-size: 16px;
+  font-size: 15px;
   color: var(--text-soft);
   font-weight: 400;
-  margin-left: 8px;
+  font-family: var(--font-body);
 }
 
 .question-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   background: var(--surface);
   border: 1.5px solid var(--border);
   border-radius: var(--radius);
@@ -485,7 +634,7 @@ button:active {
 
 .question-row-main .check {
   flex-shrink: 0;
-  width: 30px;
+  width: 28px;
   font-size: 24px;
   color: var(--green);
 }
@@ -493,20 +642,71 @@ button:active {
 .star-btn {
   flex-shrink: 0;
   font-size: 28px;
-  width: 64px;
+  width: 60px;
   align-self: stretch;
-  color: #c9b8a4;
+  color: var(--star-muted);
 }
 
 .star-btn.starred {
   color: var(--star);
 }
 
+.row-remove-btn {
+  flex-shrink: 0;
+  font-size: 17px;
+  color: var(--text-soft);
+  align-self: stretch;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+.category-remove {
+  font-size: 16px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  align-self: center;
+}
+
+.add-btn {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  min-height: 60px;
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  text-align: center;
+}
+
+.inline-form {
+  margin-top: 10px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  box-shadow: var(--shadow);
+}
+
+.inline-form-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.inline-form-buttons .action-btn {
+  flex: 1;
+}
+
 .browse-hint {
   text-align: center;
   color: var(--text-soft);
   font-size: 17px;
-  margin: 10px 20px 0;
+  margin: 4px 24px 0;
 }
 
 /* ---------- Meine Erinnerungen ---------- */
@@ -535,6 +735,12 @@ button:active {
   margin: 6px 0 4px;
 }
 
+.share-reminder .action-btn {
+  margin-top: 10px;
+  display: block;
+  width: 100%;
+}
+
 .recording-card {
   background: var(--surface);
   border: 1.5px solid var(--border);
@@ -547,6 +753,7 @@ button:active {
 .recording-title {
   font-size: 20px;
   font-weight: 700;
+  font-family: var(--font-display);
   margin: 0 0 4px;
   line-height: 1.3;
 }
@@ -566,18 +773,18 @@ button:active {
 }
 
 .sync-badge.synced {
-  background: #e3f2e4;
+  background: var(--green-soft);
   color: var(--green);
 }
 
 .sync-badge.local {
-  background: #f2ece4;
+  background: var(--surface-2);
   color: var(--text-soft);
 }
 
 .sync-badge.pending {
-  background: #fdf3d7;
-  color: #8a6d1a;
+  background: var(--pending-soft);
+  color: var(--pending-text);
 }
 
 .recording-actions {
@@ -599,17 +806,23 @@ button:active {
   border: 1.5px solid var(--border);
 }
 
-.action-btn.play {
+.action-btn.play,
+.action-btn.primary-action {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
+  border-color: var(--accent);
+}
+
+.action-btn.play {
   flex-basis: 100%;
   font-size: 20px;
   min-height: 64px;
 }
 
 .action-btn.danger {
-  background: #fdecea;
-  color: var(--record-dark);
+  background: var(--record-soft);
+  color: var(--record);
+  border-color: var(--border);
   flex: 0 1 auto;
 }
 
@@ -634,6 +847,98 @@ video.recording-player {
   flex: 1;
 }
 
+/* ---------- Einstellungen ---------- */
+
+.settings-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 16px calc(24px + env(safe-area-inset-bottom));
+}
+
+.settings-section {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 18px;
+  margin-top: 16px;
+}
+
+.settings-section h2 {
+  font-size: 21px;
+  font-family: var(--font-display);
+  margin: 0 0 12px;
+}
+
+.settings-note {
+  font-size: 17px;
+  color: var(--text-soft);
+  margin: 10px 0;
+  line-height: 1.5;
+}
+
+.settings-note.small {
+  font-size: 15px;
+}
+
+.settings-btn {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+}
+
+.choice-row {
+  display: flex;
+  gap: 10px;
+}
+
+.choice-row .choice-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 8px;
+  min-height: var(--tap-min);
+  border: 2px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  font-size: 17px;
+}
+
+.choice-row .choice-btn.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.choice-row.segmented .choice-btn {
+  flex-direction: row;
+  justify-content: center;
+  font-weight: 600;
+}
+
+.choice-name {
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.choice-hint {
+  font-size: 14px;
+  color: var(--text-soft);
+}
+
+.swatches {
+  display: flex;
+  gap: 4px;
+}
+
+.swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid rgba(128, 128, 128, 0.35);
+}
+
 /* ---------- Sonstiges ---------- */
 
 .toast {
@@ -642,7 +947,7 @@ video.recording-player {
   bottom: calc(36px + env(safe-area-inset-bottom));
   transform: translateX(-50%) translateY(20px);
   background: var(--text);
-  color: #fff;
+  color: var(--bg);
   font-size: 19px;
   padding: 14px 24px;
   border-radius: 14px;
@@ -662,18 +967,14 @@ video.recording-player {
 
 .toast.success {
   background: var(--green);
+  color: #fff;
 }
 
 .toast.error {
-  background: var(--record-dark);
+  background: var(--record);
+  color: #fff;
 }
 
 .hidden {
   display: none !important;
-}
-
-@media (min-width: 700px) {
-  #view-video {
-    max-width: none;
-  }
 }

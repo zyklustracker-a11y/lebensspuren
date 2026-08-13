@@ -121,6 +121,24 @@ export async function signOutUser() {
   await fb.authMod.signOut(fb.auth);
 }
 
+// Löscht das Konto in dieser App: erst alle Firestore-Metadaten des Nutzers,
+// dann den Firebase-Auth-Nutzer selbst. Die Dateien im Google Drive des
+// Nutzers bleiben unangetastet – sie gehören ihm, nicht der App.
+// Wirft auth/requires-recent-login, wenn die Anmeldung zu lange her ist;
+// in dem Fall einmal neu anmelden und erneut versuchen.
+export async function deleteCloudAccount() {
+  if (!fb) throw new Error('Cloud nicht initialisiert');
+  const user = fb.auth.currentUser;
+  if (!user) throw new Error('Nicht angemeldet');
+
+  const col = fb.fsMod.collection(fb.db, 'users', user.uid, 'recordings');
+  const snapshot = await fb.fsMod.getDocs(col);
+  await Promise.all(snapshot.docs.map((d) => fb.fsMod.deleteDoc(d.ref)));
+
+  driveToken = null;
+  await fb.authMod.deleteUser(user);
+}
+
 // ---------------------------------------------------------------------------
 // Google-Drive-Zugriff (Berechtigung nur für App-eigene Dateien)
 // ---------------------------------------------------------------------------

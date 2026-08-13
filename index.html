@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <title>Lebensspuren</title>
   <meta name="description" content="Erzähl deine Erinnerungen – die App zeigt dir Fragen und nimmt dich dabei auf.">
-  <meta name="theme-color" content="#fff8f0">
+  <meta name="theme-color" content="#fafafa">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png" type="image/png">
   <!-- iOS: installierbar über „Zum Home-Bildschirm" -->
@@ -14,12 +14,25 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Lebensspuren">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <script>
+    // Design und Hell/Dunkel-Modus vor dem ersten Zeichnen setzen,
+    // damit die Seite nicht kurz in der falschen Farbe aufblitzt.
+    (function () {
+      var design = localStorage.getItem('ls-design') || 'modern';
+      var mode = localStorage.getItem('ls-mode') || 'auto';
+      var dark = mode === 'dark' || (mode === 'auto'
+        && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.dataset.design = design;
+      document.documentElement.dataset.mode = dark ? 'dark' : 'light';
+    })();
+  </script>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
   <!-- ============ Startseite ============ -->
   <section id="view-home" class="view active">
+    <button id="btn-settings" class="gear-btn" aria-label="Einstellungen">⚙️</button>
     <h1 class="app-title">Lebensspuren</h1>
     <p class="app-subtitle">Deine Erinnerungen, erzählt für die Familie</p>
 
@@ -34,7 +47,7 @@
       </button>
       <button id="btn-home-browse" class="big-btn">
         <span class="btn-icon">📖</span>
-        <span>Fragen ansehen<span class="btn-sub">In Ruhe stöbern und merken</span></span>
+        <span>Fragen ansehen<span class="btn-sub">Stöbern, merken, eigene Fragen</span></span>
       </button>
       <button id="btn-home-recordings" class="big-btn">
         <span class="btn-icon">📚</span>
@@ -43,8 +56,6 @@
     </nav>
 
     <p id="home-progress" class="home-progress"></p>
-    <div id="auth-area" class="auth-area hidden"></div>
-    <p id="app-version" class="app-version"></p>
   </section>
 
   <!-- ============ Audio-Modus ============ -->
@@ -106,7 +117,7 @@
       <button class="back-btn" data-back>‹ Zurück</button>
       <span class="view-title">Alle Fragen</span>
     </header>
-    <p class="browse-hint">Tippe auf eine Frage, um sie zu beantworten.<br>Mit dem Stern ⭐ merkst du dir eine Frage.</p>
+    <p class="browse-hint">Tippe auf eine Frage, um sie zu beantworten. Mit dem Stern ⭐ merkst du dir Fragen – sie erscheinen dann ganz oben.</p>
     <div id="browse-list" class="browse-list"></div>
   </section>
 
@@ -121,6 +132,15 @@
       <button id="btn-export-all-timestamps" class="action-btn">📝 Alle Zeitstempel</button>
     </div>
     <div id="recordings-list" class="recordings-list"></div>
+  </section>
+
+  <!-- ============ Einstellungen ============ -->
+  <section id="view-settings" class="view">
+    <header class="view-header">
+      <button class="back-btn" data-back>‹ Zurück</button>
+      <span class="view-title">Einstellungen</span>
+    </header>
+    <div id="settings-content" class="settings-content"></div>
   </section>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>

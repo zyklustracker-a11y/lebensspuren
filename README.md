@@ -158,9 +158,16 @@ oder Enkel) ist die Wahrheit.
 - **Erzählen mit Video** zeigt die Frontkamera als Spiegel, die Frage liegt als
   halbtransparente Leiste über dem Bild (wie ein Teleprompter). 🔄 wechselt
   auf die Rückkamera.
-- **Fragen ansehen** zum Stöbern ohne Aufnahme: ⭐ merkt eine Frage vor,
-  ✓ zeigt bereits beantwortete Fragen. Ein Tipp auf die Frage startet den
-  Ton-Modus mit genau dieser Frage.
+- **Fragen ansehen** zum Stöbern ohne Aufnahme: ⭐ merkt eine Frage vor –
+  gemerkte Fragen erscheinen gesammelt ganz oben in der Liste. ✓ zeigt bereits
+  beantwortete Fragen. Ein Tipp auf die Frage startet den Ton-Modus mit genau
+  dieser Frage. Über „＋ Eigene Frage hinzufügen" lassen sich in jeder
+  Kategorie eigene Fragen ergänzen, ganz unten auch **eigene Kategorien**
+  (z. B. „Opa, erzähl doch mal von dem Sommer 1974 …"). Eigene Einträge
+  haben einen ✕-Knopf zum Entfernen.
+- **Einstellungen** (Zahnrad oben rechts): Google-Konto (anmelden, abmelden,
+  Konto in der App löschen), Design-Auswahl (Indigo, Bernstein, Salbei) und
+  heller/dunkler Modus (auch automatisch nach Systemeinstellung).
 - **Meine Erinnerungen** listet alle Aufnahmen mit Abspielknopf, Teilen
   (natives Teilen-Menü: WhatsApp, AirDrop, E-Mail, Drive …), Zeitstempel-Export
   als Textdatei und Cloud-Status pro Aufnahme.
@@ -227,6 +234,15 @@ Wie gewünscht, hier die wesentlichen Detailentscheidungen:
     [Mauerfall/Mondlandung/…] passierte?") habe ich als einzige Stelle des
     Katalogs sprachlich ausformuliert, damit sie direkt an Opa gerichtet
     lesbar ist. Alle übrigen Fragen sind wortgleich übernommen.
-15. **Design:** Warme Creme-/Bernstein-Töne, Systemschrift, Fragen in 28–40 pt,
-    alle Tippflächen mindestens 56 px, Aufnahmeknopf 104 px – bewusst wie der
-    Auslöser einer Kamera-App.
+15. **Design:** Drei umschaltbare Designs (Indigo = modern-klar, Standard;
+    Bernstein = warm mit Serifenschrift; Salbei = ruhig-natürlich), jeweils
+    hell und dunkel, wählbar in den Einstellungen und lokal gespeichert.
+    Fragen in 28–40 pt, alle Tippflächen mindestens 56 px, Aufnahmeknopf
+    104 px – bewusst wie der Auslöser einer Kamera-App.
+16. **Eigene Fragen und Kategorien** werden lokal in IndexedDB gespeichert
+    (Katalogdatei `questions.js` bleibt unverändert) und nahtlos in alle
+    Modi eingereiht; eigene Einträge sind lösch­bar, der mitgelieferte
+    Katalog nicht.
+17. **„Konto in dieser App löschen"** entfernt die Firestore-Metadaten und
+    den Firebase-Auth-Nutzer; lokale Aufnahmen und die Drive-Dateien bleiben
+    bewusst erhalten (sie gehören dem Google-Konto, nicht der App).

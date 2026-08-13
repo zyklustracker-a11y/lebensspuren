@@ -1,17 +1,18 @@
 // Lebensspuren – App-Logik
 // Reine Client-Anwendung: alles läuft lokal, die Cloud (firebase.js) ist optional.
 
-import { ALL_QUESTIONS, CATEGORIES } from './questions.js';
+import { CATEGORIES as BASE_CATEGORIES } from './questions.js';
 import {
   isConfigured, initCloud, onUserChanged, signInWithGoogle, signOutUser,
   uploadRecording, extensionForMime, getDriveToken, resumeRedirectSignIn,
+  deleteCloudAccount,
 } from './firebase.js';
+
+const APP_VERSION = '1.2.0';
 
 // ---------------------------------------------------------------------------
 // Kleine Helfer
 // ---------------------------------------------------------------------------
-
-const APP_VERSION = '1.1.0';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -23,11 +24,6 @@ function formatClock(ms) {
   const mm = String(m).padStart(2, '0');
   const ss = String(s).padStart(2, '0');
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
-}
-
-function formatDateShort(iso) {
-  const d = new Date(iso);
-  return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 function formatDateTime(iso) {
@@ -54,6 +50,26 @@ function showToast(message, kind = '', durationMs = 2600) {
   el.className = `toast show ${kind}`;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { el.className = 'toast'; }, durationMs);
+}
+
+// Knopf, der beim ersten Tipp um Bestätigung bittet und erst beim zweiten
+// Tipp handelt – verzeihlich, ohne Dialogfenster.
+function armButton(btn, armedLabel, action) {
+  let armed = false;
+  let timer = null;
+  const original = btn.textContent;
+  btn.addEventListener('click', async () => {
+    if (!armed) {
+      armed = true;
+      btn.textContent = armedLabel;
+      timer = setTimeout(() => { armed = false; btn.textContent = original; }, 4000);
+      return;
+    }
+    clearTimeout(timer);
+    armed = false;
+    btn.textContent = original;
+    await action();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -121,16 +137,17 @@ function setMeta(key, value) {
 const state = {
   view: 'home',
   questionIndex: 0,          // aktuelle Frage (gemeinsam für alle Modi)
+  catalog: [],               // Kategorien inkl. eigener Fragen/Kategorien
+  allQuestions: [],          // flache Liste über den ganzen Katalog
   progress: new Map(),       // qid → { starred, answered }
   cloud: null,               // Firebase-Handle oder null
   user: null,                // angemeldeter Google-Nutzer oder null
   syncing: false,
   uploadingIds: new Set(),   // Aufnahmen, die gerade hochgeladen werden
-  playingId: null,           // Aufnahme, deren Player gerade offen ist
 };
 
 function currentQuestion() {
-  return ALL_QUESTIONS[state.questionIndex];
+  return state.allQuestions[state.questionIndex];
 }
 
 async function loadProgress() {
@@ -149,10 +166,117 @@ async function updateProgress(qid, patch) {
 }
 
 // ---------------------------------------------------------------------------
+// Fragenkatalog: fest eingebaute Fragen + eigene Fragen und Kategorien
+// ---------------------------------------------------------------------------
+
+const EMPTY_CUSTOM = { questions: {}, categories: [] };
+
+async function buildCatalog() {
+  const custom = await getMeta('customCatalog', EMPTY_CUSTOM);
+  const cats = [];
+  for (const base of BASE_CATEGORIES) {
+    const questions = base.questions.map((text, i) => ({
+      qid: `${base.id}-${i + 1}`, text, custom: false,
+    }));
+    for (const q of custom.questions[base.id] || []) {
+      questions.push({ qid: q.qid, text: q.text, custom: true });
+    }
+    cats.push({ id: base.id, title: base.title, icon: base.icon, custom: false, questions });
+  }
+  for (const cc of custom.categories) {
+    const questions = (custom.questions[cc.id] || []).map((q) => ({
+      qid: q.qid, text: q.text, custom: true,
+    }));
+    cats.push({ id: cc.id, title: cc.title, icon: cc.icon || '💬', custom: true, questions });
+  }
+  state.catalog = cats;
+  state.allQuestions = cats.flatMap((c) => c.questions.map((q) => ({
+    ...q, categoryId: c.id, categoryTitle: c.title, categoryIcon: c.icon,
+  })));
+  state.questionIndex = Math.min(state.questionIndex, Math.max(0, state.allQuestions.length - 1));
+}
+
+async function mutateCustomCatalog(fn) {
+  const custom = await getMeta('customCatalog', EMPTY_CUSTOM);
+  fn(custom);
+  await setMeta('customCatalog', custom);
+  await buildCatalog();
+}
+
+async function addCustomQuestion(categoryId, text) {
+  const qid = `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  await mutateCustomCatalog((c) => {
+    if (!c.questions[categoryId]) c.questions[categoryId] = [];
+    c.questions[categoryId].push({ qid, text });
+  });
+}
+
+async function removeCustomQuestion(qid) {
+  await mutateCustomCatalog((c) => {
+    for (const catId of Object.keys(c.questions)) {
+      c.questions[catId] = c.questions[catId].filter((q) => q.qid !== qid);
+    }
+  });
+  await idb.delete('progress', qid).catch(() => {});
+  state.progress.delete(qid);
+}
+
+async function addCustomCategory(title) {
+  await mutateCustomCatalog((c) => {
+    c.categories.push({ id: `cc-${Date.now().toString(36)}`, title });
+  });
+}
+
+async function removeCustomCategory(categoryId) {
+  await mutateCustomCatalog((c) => {
+    c.categories = c.categories.filter((cat) => cat.id !== categoryId);
+    delete c.questions[categoryId];
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Design (drei Designs, jeweils hell und dunkel)
+// ---------------------------------------------------------------------------
+
+const DESIGNS = [
+  { id: 'modern', name: 'Indigo', hint: 'Klar und modern', colors: ['#4f46e5', '#fafafa', '#15161a'] },
+  { id: 'warm', name: 'Bernstein', hint: 'Warm und edel', colors: ['#b45309', '#faf6ef', '#1b1613'] },
+  { id: 'natur', name: 'Salbei', hint: 'Ruhig und natürlich', colors: ['#3f7352', '#f6f7f4', '#131a16'] },
+];
+const MODES = [
+  { id: 'auto', name: 'Automatisch' },
+  { id: 'light', name: 'Hell' },
+  { id: 'dark', name: 'Dunkel' },
+];
+
+function themeSetting() {
+  return {
+    design: localStorage.getItem('ls-design') || 'modern',
+    mode: localStorage.getItem('ls-mode') || 'auto',
+  };
+}
+
+function applyTheme() {
+  const { design, mode } = themeSetting();
+  const dark = mode === 'dark'
+    || (mode === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.design = design;
+  document.documentElement.dataset.mode = dark ? 'dark' : 'light';
+  requestAnimationFrame(() => {
+    const bg = getComputedStyle(document.body).getPropertyValue('--bg').trim();
+    if (bg) $('meta[name="theme-color"]').setAttribute('content', bg);
+  });
+}
+
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  if (themeSetting().mode === 'auto') applyTheme();
+});
+
+// ---------------------------------------------------------------------------
 // Ansichten-Wechsel
 // ---------------------------------------------------------------------------
 
-const VIEWS = ['home', 'audio', 'video', 'browse', 'recordings'];
+const VIEWS = ['home', 'audio', 'video', 'browse', 'recordings', 'settings'];
 
 async function showView(name) {
   // Laufende Aufnahme beim Verlassen immer sichern, nie verwerfen.
@@ -171,6 +295,7 @@ async function showView(name) {
   if (name === 'video') { renderQuestionDisplays(); startCameraPreview(); }
   if (name === 'browse') renderBrowse();
   if (name === 'recordings') renderRecordings();
+  if (name === 'settings') renderSettings();
 }
 
 // ---------------------------------------------------------------------------
@@ -179,15 +304,17 @@ async function showView(name) {
 
 function renderQuestionDisplays() {
   const q = currentQuestion();
+  if (!q) return;
   $('#audio-category').textContent = `${q.categoryIcon} ${q.categoryTitle}`;
   $('#audio-question').textContent = q.text;
-  $('#audio-counter').textContent = `Frage ${state.questionIndex + 1} von ${ALL_QUESTIONS.length}`;
+  $('#audio-counter').textContent = `Frage ${state.questionIndex + 1} von ${state.allQuestions.length}`;
   $('#video-category').textContent = `${q.categoryIcon} ${q.categoryTitle}`;
   $('#video-question').textContent = q.text;
 }
 
 async function goToQuestion(index) {
-  const len = ALL_QUESTIONS.length;
+  const len = state.allQuestions.length;
+  if (len === 0) return;
   state.questionIndex = ((index % len) + len) % len;
   renderQuestionDisplays();
   setMeta('questionIndex', state.questionIndex);
@@ -469,6 +596,7 @@ function startWaveform(stream) {
 function drawWaveform() {
   const canvas = $('#waveform');
   const g = canvas.getContext('2d');
+  const accent = getComputedStyle(document.body).getPropertyValue('--record').trim() || '#d32f2f';
   const render = () => {
     if (!wave.analyser) return;
     wave.analyser.getByteFrequencyData(wave.data);
@@ -476,7 +604,7 @@ function drawWaveform() {
     const bars = 32;
     const step = Math.floor(wave.data.length / bars);
     const barWidth = canvas.width / bars;
-    g.fillStyle = '#d32f2f';
+    g.fillStyle = accent;
     for (let i = 0; i < bars; i++) {
       const v = wave.data[i * step] / 255;
       const h = Math.max(4, v * canvas.height * 0.9);
@@ -547,73 +675,164 @@ async function renderHome() {
     ? 'Noch keine Aufnahmen'
     : count === 1 ? '1 Aufnahme' : `${count} Aufnahmen`;
 
-  const answered = ALL_QUESTIONS.filter((q) => progressFor(q.qid).answered).length;
+  const answered = state.allQuestions.filter((q) => progressFor(q.qid).answered).length;
   $('#home-progress').textContent = answered > 0
-    ? `Du hast schon ${answered} von ${ALL_QUESTIONS.length} Fragen beantwortet. Weiter so!`
+    ? `Du hast schon ${answered} von ${state.allQuestions.length} Fragen beantwortet. Weiter so!`
     : 'Such dir eine Frage aus und erzähl einfach los.';
-
-  renderAuthArea();
 }
 
 // ---------------------------------------------------------------------------
-// Fragen-Modus (Stöbern)
+// Fragen-Modus (Stöbern, eigene Fragen und Kategorien)
 // ---------------------------------------------------------------------------
+
+function buildQuestionRow(q) {
+  const p = progressFor(q.qid);
+  const row = document.createElement('div');
+  row.className = 'question-row';
+
+  const main = document.createElement('button');
+  main.className = 'question-row-main';
+  const check = document.createElement('span');
+  check.className = 'check';
+  check.textContent = p.answered ? '✓' : '';
+  if (p.answered) check.setAttribute('title', 'Schon beantwortet');
+  const label = document.createElement('span');
+  label.textContent = q.text;
+  main.append(check, label);
+  main.addEventListener('click', async () => {
+    const idx = state.allQuestions.findIndex((item) => item.qid === q.qid);
+    if (idx < 0) return;
+    await goToQuestion(idx);
+    showView('audio');
+  });
+  row.appendChild(main);
+
+  if (q.custom) {
+    const remove = document.createElement('button');
+    remove.className = 'row-remove-btn';
+    remove.textContent = '✕';
+    remove.setAttribute('aria-label', 'Eigene Frage entfernen');
+    armButton(remove, 'Löschen?', async () => {
+      await removeCustomQuestion(q.qid);
+      renderBrowse();
+      showToast('Frage entfernt');
+    });
+    row.appendChild(remove);
+  }
+
+  const star = document.createElement('button');
+  star.className = `star-btn${p.starred ? ' starred' : ''}`;
+  star.textContent = p.starred ? '★' : '☆';
+  star.setAttribute('aria-label', p.starred ? 'Merken aufheben' : 'Frage merken');
+  star.addEventListener('click', async () => {
+    await updateProgress(q.qid, { starred: !progressFor(q.qid).starred });
+    renderBrowse();
+  });
+  row.appendChild(star);
+
+  return row;
+}
+
+// Kleines Eingabeformular (eine Zeile + Speichern/Abbrechen), das einen
+// „Hinzufügen"-Knopf ersetzt, solange es offen ist.
+function buildInlineForm(placeholder, onSave) {
+  const wrap = document.createElement('div');
+  wrap.className = 'inline-form';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = placeholder;
+  input.maxLength = 200;
+  const buttons = document.createElement('div');
+  buttons.className = 'inline-form-buttons';
+  const save = document.createElement('button');
+  save.className = 'action-btn primary-action';
+  save.textContent = 'Speichern';
+  const cancel = document.createElement('button');
+  cancel.className = 'action-btn';
+  cancel.textContent = 'Abbrechen';
+  save.addEventListener('click', async () => {
+    const text = input.value.trim();
+    if (!text) { input.focus(); return; }
+    await onSave(text);
+  });
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') save.click(); });
+  cancel.addEventListener('click', () => renderBrowse());
+  buttons.append(save, cancel);
+  wrap.append(input, buttons);
+  return { wrap, input };
+}
+
+function buildAddButton(label, placeholder, onSave) {
+  const btn = document.createElement('button');
+  btn.className = 'add-btn';
+  btn.textContent = label;
+  btn.addEventListener('click', () => {
+    const { wrap, input } = buildInlineForm(placeholder, onSave);
+    btn.replaceWith(wrap);
+    input.focus();
+  });
+  return btn;
+}
 
 function renderBrowse() {
   const list = $('#browse-list');
   list.textContent = '';
 
-  for (const cat of CATEGORIES) {
+  // Gemerkte Fragen zuerst – das ist die Bedeutung des Sterns.
+  const starred = state.allQuestions.filter((q) => progressFor(q.qid).starred);
+  if (starred.length > 0) {
+    const heading = document.createElement('h2');
+    heading.className = 'browse-category';
+    heading.textContent = '⭐ Deine gemerkten Fragen';
+    list.appendChild(heading);
+    for (const q of starred) list.appendChild(buildQuestionRow(q));
+  }
+
+  for (const cat of state.catalog) {
     const heading = document.createElement('h2');
     heading.className = 'browse-category';
     heading.textContent = `${cat.icon} ${cat.title}`;
-    const answeredCount = cat.questions.filter((_, i) =>
-      progressFor(`${cat.id}-${i + 1}`).answered).length;
+    const answeredCount = cat.questions.filter((q) => progressFor(q.qid).answered).length;
     if (answeredCount > 0) {
       const prog = document.createElement('span');
       prog.className = 'browse-category-progress';
       prog.textContent = `${answeredCount} von ${cat.questions.length} beantwortet`;
       heading.appendChild(prog);
     }
+    if (cat.custom) {
+      const removeCat = document.createElement('button');
+      removeCat.className = 'row-remove-btn category-remove';
+      removeCat.textContent = '✕';
+      removeCat.setAttribute('aria-label', 'Kategorie entfernen');
+      armButton(removeCat, 'Löschen?', async () => {
+        await removeCustomCategory(cat.id);
+        renderBrowse();
+        showToast('Kategorie entfernt');
+      });
+      heading.appendChild(removeCat);
+    }
     list.appendChild(heading);
 
-    cat.questions.forEach((text, i) => {
-      const qid = `${cat.id}-${i + 1}`;
-      const p = progressFor(qid);
+    for (const q of cat.questions) {
+      list.appendChild(buildQuestionRow(q));
+    }
 
-      const row = document.createElement('div');
-      row.className = 'question-row';
-
-      const main = document.createElement('button');
-      main.className = 'question-row-main';
-      const check = document.createElement('span');
-      check.className = 'check';
-      check.textContent = p.answered ? '✓' : '';
-      if (p.answered) check.setAttribute('title', 'Schon beantwortet');
-      const label = document.createElement('span');
-      label.textContent = text;
-      main.append(check, label);
-      main.addEventListener('click', async () => {
-        const idx = ALL_QUESTIONS.findIndex((q) => q.qid === qid);
-        await goToQuestion(idx);
-        showView('audio');
-      });
-
-      const star = document.createElement('button');
-      star.className = `star-btn${p.starred ? ' starred' : ''}`;
-      star.textContent = p.starred ? '★' : '☆';
-      star.setAttribute('aria-label', p.starred ? 'Merken aufheben' : 'Frage merken');
-      star.addEventListener('click', async () => {
-        const newVal = !progressFor(qid).starred;
-        await updateProgress(qid, { starred: newVal });
-        star.classList.toggle('starred', newVal);
-        star.textContent = newVal ? '★' : '☆';
-      });
-
-      row.append(main, star);
-      list.appendChild(row);
-    });
+    list.appendChild(buildAddButton('＋ Eigene Frage hinzufügen', 'Deine Frage …', async (text) => {
+      await addCustomQuestion(cat.id, text);
+      renderBrowse();
+      showToast('✓ Frage hinzugefügt', 'success');
+    }));
   }
+
+  const catHeading = document.createElement('h2');
+  catHeading.className = 'browse-category';
+  catHeading.textContent = '🗂️ Neue Kategorie';
+  list.appendChild(catHeading);
+  list.appendChild(buildAddButton('＋ Eigene Kategorie hinzufügen', 'Name der Kategorie …', async (text) => {
+    await addCustomCategory(text);
+    renderBrowse();
+    showToast('✓ Kategorie hinzugefügt – füge ihr jetzt Fragen hinzu', 'success', 3500);
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -627,7 +846,6 @@ function closePlayer() {
     URL.revokeObjectURL(playerUrl);
     playerUrl = null;
   }
-  state.playingId = null;
 }
 
 async function renderRecordings() {
@@ -723,19 +941,7 @@ function buildRecordingCard(recording) {
   const deleteBtn = document.createElement('button');
   deleteBtn.className = 'action-btn danger';
   deleteBtn.textContent = '🗑️ Löschen';
-  let armed = false;
-  let armTimer = null;
-  deleteBtn.addEventListener('click', async () => {
-    if (!armed) {
-      armed = true;
-      deleteBtn.textContent = 'Wirklich löschen?';
-      armTimer = setTimeout(() => {
-        armed = false;
-        deleteBtn.textContent = '🗑️ Löschen';
-      }, 4000);
-      return;
-    }
-    clearTimeout(armTimer);
+  armButton(deleteBtn, 'Wirklich löschen?', async () => {
     await idb.delete('recordings', recording.id);
     closePlayer();
     showToast('Aufnahme gelöscht');
@@ -779,7 +985,6 @@ function togglePlayback(recording, card, playBtn) {
   el.setAttribute('playsinline', '');
   playerUrl = URL.createObjectURL(recording.blob);
   el.src = playerUrl;
-  state.playingId = recording.id;
   card.appendChild(el);
   playBtn.textContent = '⏸ Schließen';
   el.play().catch(() => {});
@@ -867,49 +1072,126 @@ async function exportAllTimestamps() {
 }
 
 // ---------------------------------------------------------------------------
-// Cloud-Sicherung (optional, local-first)
+// Einstellungen
 // ---------------------------------------------------------------------------
 
-async function initCloudFeatures() {
-  if (!isConfigured()) return; // Ohne Konfiguration: rein lokale App, keine Login-UI.
-  state.cloud = await initCloud();
-  if (!state.cloud) return;
-  $('#auth-area').classList.remove('hidden');
-  resumeRedirectSignIn(); // iOS-Fallback: Drive-Token nach Redirect-Login einsammeln
-  onUserChanged((user) => {
-    state.user = user;
-    renderAuthArea();
-    if (user) syncAll();
-    if (state.view === 'recordings') renderRecordings();
-  });
-  renderAuthArea();
+function settingsSection(title) {
+  const section = document.createElement('section');
+  section.className = 'settings-section';
+  const h = document.createElement('h2');
+  h.textContent = title;
+  section.appendChild(h);
+  return section;
 }
 
-function renderAuthArea() {
-  const area = $('#auth-area');
-  if (!state.cloud) return;
-  area.textContent = '';
+function renderSettings() {
+  const wrap = $('#settings-content');
+  wrap.textContent = '';
 
-  if (state.user) {
-    const status = document.createElement('p');
-    status.className = 'auth-status';
-    status.textContent = `☁️ Angemeldet als ${state.user.displayName || state.user.email} – deine Aufnahmen werden automatisch in Google Drive gesichert.`;
+  // --- Design ---
+  const design = settingsSection('Aussehen');
+  const { design: activeDesign, mode: activeMode } = themeSetting();
+
+  const designRow = document.createElement('div');
+  designRow.className = 'choice-row';
+  for (const d of DESIGNS) {
     const btn = document.createElement('button');
-    btn.className = 'auth-btn';
-    btn.textContent = 'Abmelden';
-    btn.addEventListener('click', async () => {
+    btn.className = `choice-btn${activeDesign === d.id ? ' selected' : ''}`;
+    const dots = document.createElement('span');
+    dots.className = 'swatches';
+    for (const c of d.colors) {
+      const dot = document.createElement('span');
+      dot.className = 'swatch';
+      dot.style.background = c;
+      dots.appendChild(dot);
+    }
+    const name = document.createElement('span');
+    name.className = 'choice-name';
+    name.textContent = d.name;
+    const hint = document.createElement('span');
+    hint.className = 'choice-hint';
+    hint.textContent = d.hint;
+    btn.append(dots, name, hint);
+    btn.addEventListener('click', () => {
+      localStorage.setItem('ls-design', d.id);
+      applyTheme();
+      renderSettings();
+    });
+    designRow.appendChild(btn);
+  }
+  design.appendChild(designRow);
+
+  const modeLabel = document.createElement('p');
+  modeLabel.className = 'settings-note';
+  modeLabel.textContent = 'Heller oder dunkler Modus:';
+  design.appendChild(modeLabel);
+  const modeRow = document.createElement('div');
+  modeRow.className = 'choice-row segmented';
+  for (const m of MODES) {
+    const btn = document.createElement('button');
+    btn.className = `choice-btn${activeMode === m.id ? ' selected' : ''}`;
+    btn.textContent = m.name;
+    btn.addEventListener('click', () => {
+      localStorage.setItem('ls-mode', m.id);
+      applyTheme();
+      renderSettings();
+    });
+    modeRow.appendChild(btn);
+  }
+  design.appendChild(modeRow);
+  wrap.appendChild(design);
+
+  // --- Konto & Sicherung ---
+  const account = settingsSection('Konto & Sicherung');
+  if (!isConfigured() || !state.cloud) {
+    const note = document.createElement('p');
+    note.className = 'settings-note';
+    note.textContent = 'Die Cloud-Sicherung ist auf diesem Gerät nicht eingerichtet. Deine Aufnahmen werden lokal gespeichert – teile sie regelmäßig mit deiner Familie.';
+    account.appendChild(note);
+  } else if (state.user) {
+    const note = document.createElement('p');
+    note.className = 'settings-note';
+    note.textContent = `Du bist angemeldet als ${state.user.displayName || ''} (${state.user.email}). Neue Aufnahmen werden automatisch in deinem Google Drive im Ordner „Lebensspuren" gesichert.`;
+    account.appendChild(note);
+
+    const signOutBtn = document.createElement('button');
+    signOutBtn.className = 'action-btn settings-btn';
+    signOutBtn.textContent = 'Abmelden';
+    signOutBtn.addEventListener('click', async () => {
       await signOutUser();
       showToast('Du bist abgemeldet. Deine Aufnahmen bleiben auf dem Gerät.');
+      renderSettings();
     });
-    area.append(status, btn);
+    account.appendChild(signOutBtn);
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'action-btn danger settings-btn';
+    deleteBtn.textContent = 'Konto in dieser App löschen';
+    armButton(deleteBtn, 'Wirklich löschen? Nochmal tippen', async () => {
+      try {
+        await deleteCloudAccount();
+        showToast('Konto gelöscht. Aufnahmen auf dem Gerät und in deinem Google Drive bleiben erhalten.', '', 5000);
+      } catch (err) {
+        console.warn('Konto löschen fehlgeschlagen:', err);
+        showToast('Das hat nicht geklappt. Melde dich einmal neu an und versuch es dann erneut.', 'error', 5000);
+      }
+      renderSettings();
+    });
+    account.appendChild(deleteBtn);
+
+    const hint = document.createElement('p');
+    hint.className = 'settings-note small';
+    hint.textContent = '„Konto löschen" entfernt deine Anmeldung und die Katalog-Einträge in der Cloud. Deine Aufnahmen bleiben auf dem Gerät und im Google-Drive-Ordner erhalten.';
+    account.appendChild(hint);
   } else {
-    const status = document.createElement('p');
-    status.className = 'auth-status';
-    status.textContent = 'Optional: Melde dich an, damit deine Aufnahmen zusätzlich in deinem Google Drive gesichert werden.';
-    const btn = document.createElement('button');
-    btn.className = 'auth-btn';
-    btn.textContent = '☁️ Mit Google anmelden';
-    btn.addEventListener('click', async () => {
+    const note = document.createElement('p');
+    note.className = 'settings-note';
+    note.textContent = 'Optional: Melde dich mit Google an, damit deine Aufnahmen zusätzlich in deinem Google Drive gesichert werden.';
+    account.appendChild(note);
+    const signInBtn = document.createElement('button');
+    signInBtn.className = 'action-btn primary-action settings-btn';
+    signInBtn.textContent = '☁️ Mit Google anmelden';
+    signInBtn.addEventListener('click', async () => {
       try {
         await signInWithGoogle();
       } catch (err) {
@@ -917,8 +1199,35 @@ function renderAuthArea() {
         showToast('Die Anmeldung hat nicht geklappt. Versuch es später noch einmal.', 'error', 4000);
       }
     });
-    area.append(status, btn);
+    account.appendChild(signInBtn);
   }
+  wrap.appendChild(account);
+
+  // --- Über die App ---
+  const about = settingsSection('Über die App');
+  const version = document.createElement('p');
+  version.className = 'settings-note';
+  version.textContent = `Lebensspuren, Version ${APP_VERSION}`;
+  about.appendChild(version);
+  wrap.appendChild(about);
+}
+
+// ---------------------------------------------------------------------------
+// Cloud-Sicherung (optional, local-first)
+// ---------------------------------------------------------------------------
+
+async function initCloudFeatures() {
+  if (!isConfigured()) return; // Ohne Konfiguration: rein lokale App, keine Login-UI.
+  state.cloud = await initCloud();
+  if (!state.cloud) return;
+  resumeRedirectSignIn(); // iOS-Fallback: Drive-Token nach Redirect-Login einsammeln
+  onUserChanged((user) => {
+    state.user = user;
+    if (user) syncAll();
+    if (state.view === 'settings') renderSettings();
+    if (state.view === 'recordings') renderRecordings();
+  });
+  if (state.view === 'settings') renderSettings();
 }
 
 // Bricht ein hängendes Versprechen nach einer Frist ab, damit die
@@ -997,6 +1306,7 @@ function wireEvents() {
   $('#btn-home-video').addEventListener('click', () => showView('video'));
   $('#btn-home-browse').addEventListener('click', () => showView('browse'));
   $('#btn-home-recordings').addEventListener('click', () => showView('recordings'));
+  $('#btn-settings').addEventListener('click', () => showView('settings'));
 
   document.querySelectorAll('[data-back]').forEach((btn) => {
     btn.addEventListener('click', () => showView('home'));
@@ -1025,12 +1335,13 @@ async function registerServiceWorker() {
 
 async function init() {
   console.info(`Lebensspuren ${APP_VERSION}`);
-  $('#app-version').textContent = `Version ${APP_VERSION}`;
+  applyTheme();
   wireEvents();
   await loadProgress();
+  await buildCatalog();
   state.questionIndex = Math.min(
     await getMeta('questionIndex', 0),
-    ALL_QUESTIONS.length - 1
+    Math.max(0, state.allQuestions.length - 1)
   );
   renderQuestionDisplays();
   renderHome();
