@@ -234,9 +234,10 @@ Wie gewünscht, hier die wesentlichen Detailentscheidungen:
     [Mauerfall/Mondlandung/…] passierte?") habe ich als einzige Stelle des
     Katalogs sprachlich ausformuliert, damit sie direkt an Opa gerichtet
     lesbar ist. Alle übrigen Fragen sind wortgleich übernommen.
-15. **Design:** Drei umschaltbare Designs (Indigo = modern-klar, Standard;
-    Bernstein = warm mit Serifenschrift; Salbei = ruhig-natürlich), jeweils
-    hell und dunkel, wählbar in den Einstellungen und lokal gespeichert.
+15. **Design:** Drei umschaltbare Designs (Salbei = ruhig-natürlich, Standard
+    im dunklen Modus; Indigo = modern-klar; Bernstein = warm mit
+    Serifenschrift), jeweils hell und dunkel, wählbar in den Einstellungen
+    und lokal gespeichert. App-Icon: Sprechblase mit Herz in Salbeigrün.
     Fragen in 28–40 pt, alle Tippflächen mindestens 56 px, Aufnahmeknopf
     104 px – bewusst wie der Auslöser einer Kamera-App.
 16. **Eigene Fragen und Kategorien** werden lokal in IndexedDB gespeichert

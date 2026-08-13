@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <title>Lebensspuren</title>
   <meta name="description" content="Erzähl deine Erinnerungen – die App zeigt dir Fragen und nimmt dich dabei auf.">
-  <meta name="theme-color" content="#fafafa">
+  <meta name="theme-color" content="#121713">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png" type="image/png">
   <!-- iOS: installierbar über „Zum Home-Bildschirm" -->
@@ -18,8 +18,8 @@
     // Design und Hell/Dunkel-Modus vor dem ersten Zeichnen setzen,
     // damit die Seite nicht kurz in der falschen Farbe aufblitzt.
     (function () {
-      var design = localStorage.getItem('ls-design') || 'modern';
-      var mode = localStorage.getItem('ls-mode') || 'auto';
+      var design = localStorage.getItem('ls-design') || 'natur';
+      var mode = localStorage.getItem('ls-mode') || 'dark';
       var dark = mode === 'dark' || (mode === 'auto'
         && window.matchMedia('(prefers-color-scheme: dark)').matches);
       document.documentElement.dataset.design = design;

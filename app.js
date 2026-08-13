@@ -8,7 +8,7 @@ import {
   deleteCloudAccount,
 } from './firebase.js';
 
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.2.1';
 
 // ---------------------------------------------------------------------------
 // Kleine Helfer
@@ -239,9 +239,9 @@ async function removeCustomCategory(categoryId) {
 // ---------------------------------------------------------------------------
 
 const DESIGNS = [
+  { id: 'natur', name: 'Salbei', hint: 'Ruhig und natürlich', colors: ['#3f7352', '#f6f7f4', '#131a16'] },
   { id: 'modern', name: 'Indigo', hint: 'Klar und modern', colors: ['#4f46e5', '#fafafa', '#15161a'] },
   { id: 'warm', name: 'Bernstein', hint: 'Warm und edel', colors: ['#b45309', '#faf6ef', '#1b1613'] },
-  { id: 'natur', name: 'Salbei', hint: 'Ruhig und natürlich', colors: ['#3f7352', '#f6f7f4', '#131a16'] },
 ];
 const MODES = [
   { id: 'auto', name: 'Automatisch' },
@@ -251,8 +251,8 @@ const MODES = [
 
 function themeSetting() {
   return {
-    design: localStorage.getItem('ls-design') || 'modern',
-    mode: localStorage.getItem('ls-mode') || 'auto',
+    design: localStorage.getItem('ls-design') || 'natur',
+    mode: localStorage.getItem('ls-mode') || 'dark',
   };
 }
 
