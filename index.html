@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <title>Lebensspuren</title>
   <meta name="description" content="Erzähl deine Erinnerungen – die App zeigt dir Fragen und nimmt dich dabei auf.">
-  <meta name="theme-color" content="#121713">
+  <meta name="theme-color" content="#f2e8d5">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png" type="image/png">
   <!-- iOS: installierbar über „Zum Home-Bildschirm" -->
@@ -18,8 +18,8 @@
     // Design und Hell/Dunkel-Modus vor dem ersten Zeichnen setzen,
     // damit die Seite nicht kurz in der falschen Farbe aufblitzt.
     (function () {
-      var design = localStorage.getItem('ls-design') || 'natur';
-      var mode = localStorage.getItem('ls-mode') || 'dark';
+      var design = localStorage.getItem('ls-design') || 'warm';
+      var mode = localStorage.getItem('ls-mode') || 'light';
       var dark = mode === 'dark' || (mode === 'auto'
         && window.matchMedia('(prefers-color-scheme: dark)').matches);
       document.documentElement.dataset.design = design;
@@ -30,143 +30,206 @@
 </head>
 <body>
 
-  <!-- ============ Startseite ============ -->
-  <section id="view-home" class="view active">
-    <button id="btn-settings" class="gear-btn" aria-label="Einstellungen">⚙️</button>
-    <h1 class="app-title">Lebensspuren</h1>
-    <p class="app-subtitle">Deine Erinnerungen, erzählt für die Familie</p>
+  <!-- ============ Startseite: der Buchdeckel ============ -->
+  <section id="view-home" class="view active with-tabbar">
+    <button id="btn-settings" class="gear-btn" aria-label="Einstellungen">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 7h14M5 12h14M5 17h14"/><circle cx="9" cy="7" r="1.8" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.8" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="1.8" fill="currentColor" stroke="none"/></svg>
+    </button>
 
-    <nav class="home-buttons">
-      <button id="btn-home-audio" class="big-btn primary">
-        <span class="btn-icon">🎙️</span>
-        <span>Erzählen mit Ton<span class="btn-sub">Frage lesen und einfach sprechen</span></span>
-      </button>
-      <button id="btn-home-video" class="big-btn">
-        <span class="btn-icon">🎥</span>
-        <span>Erzählen mit Video<span class="btn-sub">Mit der Kamera aufnehmen</span></span>
-      </button>
-      <button id="btn-home-browse" class="big-btn">
-        <span class="btn-icon">📖</span>
-        <span>Fragen ansehen<span class="btn-sub">Stöbern, merken, eigene Fragen</span></span>
-      </button>
-      <button id="btn-home-recordings" class="big-btn">
-        <span class="btn-icon">📚</span>
-        <span>Meine Erinnerungen<span class="btn-sub" id="home-rec-count">Noch keine Aufnahmen</span></span>
-      </button>
-      <button id="btn-home-family" class="big-btn hidden">
-        <span class="btn-icon">👨‍👩‍👧‍👦</span>
-        <span>Familie<span class="btn-sub">Aufnahmen und Fragen deiner Liebsten</span></span>
-      </button>
-    </nav>
+    <header class="cover">
+      <p class="cover-over" id="home-cover-over">Das Lebensbuch</p>
+      <h1 class="cover-name" id="home-cover-name">Lebensspuren</h1>
+      <p class="cover-sub" id="home-cover-sub">Deine Erinnerungen, erzählt für die Familie</p>
+      <div class="cover-rule">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M19 4c-6 1-10 5-11.5 11L6 20l5-1.5C17 17 20.5 12 21 6z"/><path d="M7.5 15.5C10 11 13 8 17 6"/></svg>
+      </div>
+    </header>
 
-    <p id="home-progress" class="home-progress"></p>
+    <div class="ribbon-card">
+      <span class="ribbon-label" id="home-question-label">Hier geht es weiter</span>
+      <p class="ribbon-question" id="home-question">…</p>
+      <div class="ribbon-buttons">
+        <button id="btn-home-audio" class="tell-btn primary">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
+          Erzählen
+        </button>
+        <button id="btn-home-video" class="tell-btn">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="12" height="10" rx="2.5"/><path d="m15 10.5 6-3.5v10l-6-3.5"/></svg>
+          Mit Video
+        </button>
+      </div>
+    </div>
+
+    <div class="home-progress">
+      <div class="row"><span>Dein Lebensbuch</span><b id="home-progress-label">…</b></div>
+      <div class="progress-bar"><i id="home-progress-fill"></i></div>
+    </div>
+
+    <p class="overview-label">Alles auf einen Blick</p>
+    <div class="home-tiles">
+      <button id="btn-home-browse" class="home-tile">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 4c-6 1-10 5-11.5 11L6 20l5-1.5C17 17 20.5 12 21 6z"/><path d="M7.5 15.5C10 11 13 8 17 6"/></svg>
+        <b>Fragen stöbern</b><span>Merken, eigene Fragen, Kapitel</span>
+      </button>
+      <button id="btn-home-recordings" class="home-tile">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><circle cx="9.5" cy="9.5" r="1.6"/><path d="m5 17 4.5-4.5 3 3L16 12l3 3"/></svg>
+        <b>Erinnerungen</b><span id="home-rec-count">Noch keine Aufnahmen</span>
+      </button>
+      <button id="btn-home-family" class="home-tile hidden">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8.5" r="3.2"/><path d="M3.5 19c.6-3 2.8-4.7 5.5-4.7s4.9 1.7 5.5 4.7"/><circle cx="16.8" cy="9.5" r="2.5"/><path d="M15.5 14.6c2.4.2 4.2 1.7 4.9 4.4"/></svg>
+        <b>Familie</b><span>Die Lebensbücher deiner Liebsten</span>
+      </button>
+      <button id="btn-home-settings-tile" class="home-tile">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 7h14M5 12h14M5 17h14"/><circle cx="9" cy="7" r="1.8" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.8" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="1.8" fill="currentColor" stroke="none"/></svg>
+        <b>Einstellungen</b><span>Konto, Aussehen, Sicherung</span>
+      </button>
+    </div>
   </section>
 
-  <!-- ============ Audio-Modus ============ -->
+  <!-- ============ Erzählen mit Ton: eine Seite im Buch ============ -->
   <section id="view-audio" class="view">
-    <header class="view-header">
-      <button class="back-btn" data-back>‹ Zurück</button>
-      <span class="view-title">Erzählen mit Ton</span>
+    <header class="page-head">
+      <button class="back-btn" data-back>
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"/></svg>
+        Zum Buch
+      </button>
+      <span id="audio-counter" class="page-no"></span>
     </header>
 
     <div class="question-area">
-      <p id="audio-category" class="category-label"></p>
+      <p id="audio-category" class="chapter-label"></p>
+      <div class="big-quote" aria-hidden="true">„</div>
       <p id="audio-question" class="question-text"></p>
-      <p id="audio-answered" class="answered-badge hidden">✓ Schon beantwortet – blättere weiter zur nächsten Frage</p>
-      <p id="audio-counter" class="question-counter"></p>
+      <p id="audio-answered" class="answered-badge hidden">✓ Schon erzählt – blättere weiter zur nächsten Frage</p>
+      <canvas id="waveform" width="480" height="56" aria-hidden="true"></canvas>
+      <p id="audio-timer" class="timer idle"></p>
     </div>
 
-    <canvas id="waveform" width="480" height="72" aria-hidden="true"></canvas>
-    <p id="audio-timer" class="timer idle"></p>
-    <p id="audio-hint" class="record-hint">Tippe auf den roten Knopf, um zu starten</p>
+    <p id="audio-hint" class="record-hint">Tippe auf das Siegel und erzähl einfach los.</p>
     <button id="audio-pause" class="pause-btn hidden">⏸ Pause</button>
 
     <div class="controls">
-      <button id="audio-prev" class="nav-btn" aria-label="Vorherige Frage">‹</button>
-      <button id="audio-record" class="record-btn" aria-label="Aufnahme starten oder beenden">
-        <span class="record-symbol"></span>
+      <button id="audio-prev" class="nav-btn" aria-label="Vorherige Frage">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"/></svg>
       </button>
-      <button id="audio-next" class="nav-btn" aria-label="Nächste Frage">›</button>
+      <button id="audio-record" class="record-btn" aria-label="Aufnahme starten oder beenden">
+        <svg class="ic seal-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
+        <span class="seal-stop"></span>
+      </button>
+      <button id="audio-next" class="nav-btn" aria-label="Nächste Frage">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 6 6 6-6 6"/></svg>
+      </button>
     </div>
   </section>
 
-  <!-- ============ Video-Modus ============ -->
+  <!-- ============ Erzählen mit Video ============ -->
   <section id="view-video" class="view">
     <div class="video-stage">
       <video id="camera-preview" autoplay playsinline muted></video>
 
       <div class="video-question-bar">
-        <p id="video-category" class="category-label"></p>
+        <p id="video-category" class="chapter-label"></p>
         <p id="video-question" class="question-text"></p>
-        <p id="video-answered" class="answered-badge hidden">✓ Schon beantwortet</p>
+        <p id="video-answered" class="answered-badge hidden">✓ Schon erzählt</p>
       </div>
 
       <div class="video-topbar">
-        <button class="back-btn" data-back>‹ Zurück</button>
+        <button class="back-btn" data-back>
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"/></svg>
+          Zum Buch
+        </button>
       </div>
-      <button id="video-flip" class="flip-btn" aria-label="Kamera wechseln">🔄</button>
+      <button id="video-flip" class="flip-btn" aria-label="Kamera wechseln">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 0 0-14.5-3.5"/><path d="M5.5 4v3.5H9"/><path d="M4 13a8 8 0 0 0 14.5 3.5"/><path d="M18.5 20v-3.5H15"/></svg>
+      </button>
 
       <p id="video-timer" class="video-timer"></p>
       <button id="video-pause" class="pause-btn video-pause hidden">⏸ Pause</button>
 
       <div class="video-controls">
-        <button id="video-prev" class="nav-btn" aria-label="Vorherige Frage">‹</button>
-        <button id="video-record" class="record-btn" aria-label="Aufnahme starten oder beenden">
-          <span class="record-symbol"></span>
+        <button id="video-prev" class="nav-btn" aria-label="Vorherige Frage">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"/></svg>
         </button>
-        <button id="video-next" class="nav-btn" aria-label="Nächste Frage">›</button>
+        <button id="video-record" class="record-btn" aria-label="Aufnahme starten oder beenden">
+          <svg class="ic seal-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="12" height="10" rx="2.5"/><path d="m15 10.5 6-3.5v10l-6-3.5"/></svg>
+        <span class="seal-stop"></span>
+        </button>
+        <button id="video-next" class="nav-btn" aria-label="Nächste Frage">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 6 6 6-6 6"/></svg>
+        </button>
       </div>
     </div>
   </section>
 
-  <!-- ============ Fragen-Modus (Stöbern) ============ -->
-  <section id="view-browse" class="view">
+  <!-- ============ Fragen-Modus (Kapitel durchstöbern) ============ -->
+  <section id="view-browse" class="view with-tabbar">
     <header class="view-header">
-      <button class="back-btn" data-back>‹ Zurück</button>
+      <button class="back-btn" data-back>
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"/></svg>
+        Zum Buch
+      </button>
       <span class="view-title">Alle Fragen</span>
     </header>
-    <p class="browse-hint">Tippe auf eine Frage, um sie zu beantworten. Mit dem Stern ⭐ merkst du dir Fragen – sie erscheinen dann ganz oben.</p>
+    <p class="browse-hint">Tippe auf eine Frage, um sie zu erzählen. Mit dem Stern merkst du dir Fragen – sie erscheinen dann ganz oben.</p>
     <div id="browse-list" class="browse-list"></div>
   </section>
 
-  <!-- ============ Meine Erinnerungen ============ -->
-  <section id="view-recordings" class="view">
+  <!-- ============ Meine Erinnerungen (Andenken) ============ -->
+  <section id="view-recordings" class="view with-tabbar">
     <header class="view-header">
-      <button class="back-btn" data-back>‹ Zurück</button>
+      <button class="back-btn" data-back>
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"/></svg>
+        Zum Buch
+      </button>
       <span class="view-title">Meine Erinnerungen</span>
     </header>
     <div id="recordings-toolbar" class="recordings-toolbar hidden">
-      <button id="btn-share-all" class="action-btn">📤 Alles teilen</button>
-      <button id="btn-export-all-timestamps" class="action-btn">📝 Alle Zeitstempel</button>
+      <button id="btn-share-all" class="action-btn">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><path d="m8 8 4-4 4 4"/><path d="M5 13v6h14v-6"/></svg>
+        Alles teilen
+      </button>
+      <button id="btn-export-all-timestamps" class="action-btn">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+        Alle Zeitstempel
+      </button>
     </div>
     <div id="recordings-list" class="recordings-list"></div>
   </section>
 
   <!-- ============ Einstellungen ============ -->
-  <section id="view-settings" class="view">
+  <section id="view-settings" class="view with-tabbar">
     <header class="view-header">
-      <button id="settings-back" class="back-btn">‹ Zurück</button>
+      <button id="settings-back" class="back-btn">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"/></svg>
+        <span id="settings-back-label">Zum Buch</span>
+      </button>
       <span id="settings-title" class="view-title">Einstellungen</span>
     </header>
     <div id="settings-content" class="settings-content"></div>
   </section>
 
   <!-- ============ Familie: Übersicht ============ -->
-  <section id="view-family" class="view">
+  <section id="view-family" class="view with-tabbar">
     <header class="view-header">
-      <button class="back-btn" data-back>‹ Zurück</button>
+      <button class="back-btn" data-back>
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"/></svg>
+        Zum Buch
+      </button>
       <span class="view-title">Familie</span>
     </header>
-    <div id="family-list" class="home-buttons settings-content"></div>
+    <div id="family-list"></div>
   </section>
 
-  <!-- ============ Familie: Person ============ -->
-  <section id="view-member" class="view">
+  <!-- ============ Familie: Person (Kommandozentrale) ============ -->
+  <section id="view-member" class="view with-tabbar">
     <header class="view-header">
-      <button id="member-back" class="back-btn">‹ Familie</button>
+      <button id="member-back" class="back-btn">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 6-6 6 6 6"/></svg>
+        Familie
+      </button>
       <span id="member-title" class="view-title">Familien-Mitglied</span>
     </header>
-    <div id="member-content" class="settings-content"></div>
+    <div id="member-content"></div>
   </section>
 
   <!-- Nachfrage nach kurzen Aufnahmen (unter 1 Minute pro Frage) -->
@@ -180,7 +243,44 @@
     </div>
   </div>
 
+  <!-- Nachfrage beim „Erzählen"-Tab: mit Ton oder mit Video? -->
+  <div id="mode-dialog" class="dialog-overlay hidden">
+    <div class="dialog-card">
+      <p class="dialog-title">Wie möchtest du erzählen?</p>
+      <p class="dialog-text">Deine nächste Frage wartet schon. Während der Aufnahme kannst du jederzeit zur nächsten Frage blättern.</p>
+      <button id="mode-audio" class="action-btn primary-action">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
+        Mit Ton erzählen
+      </button>
+      <button id="mode-video" class="action-btn">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="12" height="10" rx="2.5"/><path d="m15 10.5 6-3.5v10l-6-3.5"/></svg>
+        Mit Video erzählen
+      </button>
+      <button id="mode-cancel" class="action-btn quiet">Abbrechen</button>
+    </div>
+  </div>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <!-- Feste Bereichs-Leiste unten -->
+  <nav id="tabbar" class="tabbar">
+    <button id="tab-home" data-tab="home">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 4l9 6.5"/><path d="M5 9.5V20h14V9.5"/></svg>
+      Start
+    </button>
+    <button id="tab-browse" data-tab="browse">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 4c-6 1-10 5-11.5 11L6 20l5-1.5C17 17 20.5 12 21 6z"/><path d="M7.5 15.5C10 11 13 8 17 6"/></svg>
+      Fragen
+    </button>
+    <button id="tab-tell" data-tab="tell">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
+      Erzählen
+    </button>
+    <button id="tab-recs" data-tab="recordings">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><circle cx="9.5" cy="9.5" r="1.6"/><path d="m5 17 4.5-4.5 3 3L16 12l3 3"/></svg>
+      Erinnerungen
+    </button>
+  </nav>
 
   <script type="module" src="app.js"></script>
 </body>
