@@ -11,7 +11,7 @@ import {
   trashDriveFiles, trashDriveFilesByTitle, deleteMemberRecording,
 } from './firebase.js';
 
-const APP_VERSION = '1.8.1';
+const APP_VERSION = '1.9.0';
 
 // ---------------------------------------------------------------------------
 // Kleine Helfer
@@ -199,17 +199,34 @@ async function updateProgress(qid, patch) {
 // Fragenkatalog: fest eingebaute Fragen + eigene Fragen und Kategorien
 // ---------------------------------------------------------------------------
 
-const EMPTY_CUSTOM = { questions: {}, categories: [] };
+const EMPTY_CUSTOM = { questions: {}, categories: [], removedQuestions: [], removedCategories: [] };
+
+// Bringt gespeicherte Katalog-Anpassungen (auch aus älteren App-Versionen
+// ohne Ausblende-Listen) auf die vollständige Struktur – als neues Objekt,
+// damit nie versehentlich EMPTY_CUSTOM verändert wird.
+function normalizeCustom(custom) {
+  const src = custom || {};
+  return {
+    questions: src.questions || {},
+    categories: src.categories || [],
+    removedQuestions: src.removedQuestions || [],
+    removedCategories: src.removedCategories || [],
+  };
+}
 
 // Setzt aus dem festen Katalog und eigenen Fragen/Kategorien die
 // vollständige Struktur zusammen – auch für die Familien-Ansicht nutzbar.
+// Eingebaute Fragen/Kategorien auf den Ausblende-Listen werden übersprungen.
 function composeCatalog(custom) {
-  const c = custom || EMPTY_CUSTOM;
+  const c = normalizeCustom(custom);
+  const removedQ = new Set(c.removedQuestions);
+  const removedC = new Set(c.removedCategories);
   const cats = [];
   for (const base of BASE_CATEGORIES) {
-    const questions = base.questions.map((text, i) => ({
-      qid: `${base.id}-${i + 1}`, text, custom: false,
-    }));
+    if (removedC.has(base.id)) continue;
+    const questions = base.questions
+      .map((text, i) => ({ qid: `${base.id}-${i + 1}`, text, custom: false }))
+      .filter((q) => !removedQ.has(q.qid));
     for (const q of c.questions[base.id] || []) {
       questions.push({ qid: q.qid, text: q.text, custom: true });
     }
@@ -236,7 +253,7 @@ async function buildCatalog() {
 }
 
 async function mutateCustomCatalog(fn) {
-  const custom = await getMeta('customCatalog', EMPTY_CUSTOM);
+  const custom = normalizeCustom(await getMeta('customCatalog', null));
   fn(custom);
   await setMeta('customCatalog', custom);
   await setMeta('catalogUpdatedAt', Date.now());
@@ -252,14 +269,37 @@ async function addCustomQuestion(categoryId, text) {
   });
 }
 
-async function removeCustomQuestion(qid) {
-  await mutateCustomCatalog((c) => {
+// Nimmt eine Frage aus einem Katalog-Anpassungsobjekt heraus: eigene Fragen
+// werden gelöscht, eingebaute nur ausgeblendet. Aufnahmen bleiben in beiden
+// Fällen unangetastet – sie liegen getrennt vom Katalog.
+// Wird sowohl für das eigene Konto als auch in der Familien-Ansicht genutzt.
+function applyQuestionRemoval(c, q) {
+  if (q.custom) {
     for (const catId of Object.keys(c.questions)) {
-      c.questions[catId] = c.questions[catId].filter((q) => q.qid !== qid);
+      c.questions[catId] = c.questions[catId].filter((x) => x.qid !== q.qid);
     }
-  });
-  await idb.delete('progress', qid).catch(() => {});
-  state.progress.delete(qid);
+  } else if (!c.removedQuestions.includes(q.qid)) {
+    c.removedQuestions.push(q.qid);
+  }
+}
+
+// Entsprechend für Kategorien: eigene löschen, eingebaute ausblenden.
+// Eigene Fragen der Kategorie verschwinden mit; Aufnahmen bleiben erhalten.
+function applyCategoryRemoval(c, cat) {
+  if (cat.custom) {
+    c.categories = c.categories.filter((x) => x.id !== cat.id);
+  } else if (!c.removedCategories.includes(cat.id)) {
+    c.removedCategories.push(cat.id);
+  }
+  delete c.questions[cat.id];
+}
+
+async function removeQuestion(q) {
+  await mutateCustomCatalog((c) => applyQuestionRemoval(c, q));
+  if (q.custom) {
+    await idb.delete('progress', q.qid).catch(() => {});
+    state.progress.delete(q.qid);
+  }
 }
 
 async function addCustomCategory(title) {
@@ -268,11 +308,8 @@ async function addCustomCategory(title) {
   });
 }
 
-async function removeCustomCategory(categoryId) {
-  await mutateCustomCatalog((c) => {
-    c.categories = c.categories.filter((cat) => cat.id !== categoryId);
-    delete c.questions[categoryId];
-  });
+async function removeCategory(cat) {
+  await mutateCustomCatalog((c) => applyCategoryRemoval(c, cat));
 }
 
 // ---------------------------------------------------------------------------
@@ -382,19 +419,23 @@ async function goToQuestion(index) {
 // Aufnahme-Engine (Audio und Video)
 // ---------------------------------------------------------------------------
 
+// MP4 (AAC bzw. H.264) zuerst: Diese Dateien spielt wirklich jedes Gerät ab –
+// auch die Google-Drive-Vorschau auf dem iPhone, die mit WebM/Opus nichts
+// anfangen kann. WebM bleibt als Reserve für Browser ohne MP4-Aufnahme
+// (z. B. Firefox oder älteres Chrome).
 const AUDIO_MIME_CANDIDATES = [
-  'audio/webm;codecs=opus',
-  'audio/webm',
   'audio/mp4;codecs=mp4a.40.2',
   'audio/mp4',
+  'audio/webm;codecs=opus',
+  'audio/webm',
 ];
 
 const VIDEO_MIME_CANDIDATES = [
+  'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+  'video/mp4',
   'video/webm;codecs=vp9,opus',
   'video/webm;codecs=vp8,opus',
   'video/webm',
-  'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
-  'video/mp4',
 ];
 
 function pickMimeType(candidates) {
@@ -975,18 +1016,19 @@ function buildQuestionRow(q) {
   });
   row.appendChild(main);
 
-  if (q.custom) {
-    const remove = document.createElement('button');
-    remove.className = 'row-remove-btn';
-    remove.textContent = '✕';
-    remove.setAttribute('aria-label', 'Eigene Frage entfernen');
-    armButton(remove, 'Löschen?', async () => {
-      await removeCustomQuestion(q.qid);
-      renderBrowse();
-      showToast('Frage entfernt');
-    });
-    row.appendChild(remove);
-  }
+  const remove = document.createElement('button');
+  remove.className = 'row-remove-btn';
+  remove.textContent = '✕';
+  remove.setAttribute('aria-label', 'Frage löschen');
+  armButton(remove, 'Löschen?', async () => {
+    const wasAnswered = progressFor(q.qid).answered;
+    await removeQuestion(q);
+    renderBrowse();
+    showToast(wasAnswered
+      ? 'Frage entfernt – deine Aufnahme dazu bleibt erhalten'
+      : 'Frage entfernt');
+  });
+  row.appendChild(remove);
 
   const star = document.createElement('button');
   star.className = `star-btn${p.starred ? ' starred' : ''}`;
@@ -1067,18 +1109,16 @@ function renderBrowse() {
       prog.textContent = `${answeredCount} von ${cat.questions.length} beantwortet`;
       heading.appendChild(prog);
     }
-    if (cat.custom) {
-      const removeCat = document.createElement('button');
-      removeCat.className = 'row-remove-btn category-remove';
-      removeCat.textContent = '✕';
-      removeCat.setAttribute('aria-label', 'Kategorie entfernen');
-      armButton(removeCat, 'Löschen?', async () => {
-        await removeCustomCategory(cat.id);
-        renderBrowse();
-        showToast('Kategorie entfernt');
-      });
-      heading.appendChild(removeCat);
-    }
+    const removeCat = document.createElement('button');
+    removeCat.className = 'row-remove-btn category-remove';
+    removeCat.textContent = '✕';
+    removeCat.setAttribute('aria-label', `Kategorie „${cat.title}" löschen`);
+    armButton(removeCat, 'Löschen?', async () => {
+      await removeCategory(cat);
+      renderBrowse();
+      showToast('Kategorie entfernt – vorhandene Aufnahmen bleiben erhalten');
+    });
+    heading.appendChild(removeCat);
     list.appendChild(heading);
 
     for (const q of cat.questions) {
@@ -1913,7 +1953,7 @@ function buildMemberRecordingCard(uid, r, isDeleted) {
 
 async function mutateMemberCatalog(uid, fn) {
   const entry = await loadMemberData(uid);
-  const custom = JSON.parse(JSON.stringify(entry.custom));
+  const custom = normalizeCustom(JSON.parse(JSON.stringify(entry.custom)));
   fn(custom);
   const updatedAt = Date.now();
   await writeMemberCatalog(uid, custom, updatedAt);
@@ -1988,16 +2028,15 @@ async function renderMember() {
       prog.textContent = `${answeredCount} von ${cat.questions.length} beantwortet`;
       heading.appendChild(prog);
     }
-    if (cat.custom) {
-      const removeCat = document.createElement('button');
-      removeCat.className = 'row-remove-btn category-remove';
-      removeCat.textContent = '✕';
-      armButton(removeCat, 'Löschen?', () => mutateMemberCatalog(uid, (c) => {
-        c.categories = (c.categories || []).filter((x) => x.id !== cat.id);
-        delete c.questions[cat.id];
-      }));
-      heading.appendChild(removeCat);
-    }
+    const removeCat = document.createElement('button');
+    removeCat.className = 'row-remove-btn category-remove';
+    removeCat.textContent = '✕';
+    removeCat.setAttribute('aria-label', `Kategorie „${cat.title}" löschen`);
+    armButton(removeCat, 'Löschen?', async () => {
+      await mutateMemberCatalog(uid, (c) => applyCategoryRemoval(c, cat));
+      showToast('Kategorie entfernt – vorhandene Aufnahmen bleiben erhalten');
+    });
+    heading.appendChild(removeCat);
     wrap.appendChild(heading);
 
     for (const q of cat.questions) {
@@ -2013,17 +2052,17 @@ async function renderMember() {
       label.textContent = q.text;
       main.append(check, label);
       row.appendChild(main);
-      if (q.custom) {
-        const remove = document.createElement('button');
-        remove.className = 'row-remove-btn';
-        remove.textContent = '✕';
-        armButton(remove, 'Löschen?', () => mutateMemberCatalog(uid, (c) => {
-          for (const catId of Object.keys(c.questions)) {
-            c.questions[catId] = c.questions[catId].filter((x) => x.qid !== q.qid);
-          }
-        }));
-        row.appendChild(remove);
-      }
+      const remove = document.createElement('button');
+      remove.className = 'row-remove-btn';
+      remove.textContent = '✕';
+      remove.setAttribute('aria-label', 'Frage löschen');
+      armButton(remove, 'Löschen?', async () => {
+        await mutateMemberCatalog(uid, (c) => applyQuestionRemoval(c, q));
+        showToast(p.answered
+          ? 'Frage entfernt – die Aufnahme dazu bleibt erhalten'
+          : 'Frage entfernt');
+      });
+      row.appendChild(remove);
       if (p.starred) {
         const star = document.createElement('span');
         star.className = 'star-btn starred';
