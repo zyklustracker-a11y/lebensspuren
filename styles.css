@@ -1675,6 +1675,139 @@ video.recording-player {
   font-size: 17px;
 }
 
+/* ---------- Onboarding: Rollen-Wahl + geführte Tour ---------- */
+
+.role-btn {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  text-align: left;
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  min-height: var(--tap-min);
+}
+
+.role-btn:active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.role-btn .ic {
+  font-size: 24px;
+  color: var(--accent);
+  margin-top: 2px;
+}
+
+.role-btn b {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 600;
+  display: block;
+}
+
+.role-btn .role-sub {
+  display: block;
+  font-size: 14.5px;
+  color: var(--text-soft);
+  line-height: 1.4;
+  margin-top: 3px;
+}
+
+#tour.hidden {
+  display: none;
+}
+
+#tour-blocker {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+}
+
+/* Das Loch im abgedunkelten Bildschirm – der riesige Schatten dunkelt
+   alles außer dem hervorgehobenen Element ab. */
+#tour-spotlight {
+  position: fixed;
+  z-index: 81;
+  border-radius: 14px;
+  box-shadow: 0 0 0 200vmax rgba(24, 16, 6, 0.62);
+  pointer-events: none;
+  transition: top 0.35s ease, left 0.35s ease, width 0.35s ease, height 0.35s ease;
+}
+
+#tour-pointer {
+  position: fixed;
+  z-index: 83;
+  width: 34px;
+  height: 34px;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.4));
+  animation: tour-tap 1.2s ease-in-out infinite;
+  transition: top 0.35s ease, left 0.35s ease;
+}
+
+@keyframes tour-tap {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-5px, -7px) scale(0.92); }
+}
+
+#tour-bubble {
+  position: fixed;
+  z-index: 82;
+  left: 16px;
+  right: 16px;
+  max-width: 480px;
+  margin: 0 auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
+  padding: 18px;
+  transition: top 0.35s ease;
+}
+
+#tour-text {
+  font-size: 17.5px;
+  line-height: 1.5;
+  margin: 0 0 14px;
+}
+
+.tour-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tour-dots {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+}
+
+.tour-dots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+.tour-dots i.on {
+  background: var(--accent);
+}
+
+#tour-skip {
+  font-size: 15px;
+  color: var(--text-soft);
+  padding: 10px 6px;
+  min-height: 44px;
+}
+
+#tour-next {
+  min-height: 50px;
+  padding: 10px 22px;
+}
+
 .toast {
   position: fixed;
   left: 50%;
