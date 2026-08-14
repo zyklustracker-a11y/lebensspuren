@@ -375,7 +375,13 @@ export async function uploadRecording(rec, blob, extras = {}) {
   const ext = extensionForMime(rec.mimeType);
   const safeTitle = rec.title.replace(/[\\/:*?"<>|]/g, '').slice(0, 120);
 
-  const fileId = await driveUploadFile(token, `${safeTitle}.${ext}`, rec.mimeType, blob, folderId);
+  // Drive bekommt den MIME-Typ ohne Codec-Zusatz („audio/webm" statt
+  // „audio/webm;codecs=opus"): Mit Parametern findet vor allem der mobile
+  // Drive-Player keinen passenden Abspieler und meldet einen Dateifehler.
+  const driveMime = (rec.mimeType || '').split(';')[0].trim()
+    || (rec.mode === 'video' ? 'video/webm' : 'audio/webm');
+
+  const fileId = await driveUploadFile(token, `${safeTitle}.${ext}`, driveMime, blob, folderId);
   const sidecarFileIds = [];
   if (timestampsText) {
     sidecarFileIds.push(await driveUploadFile(token, `${safeTitle} – Zeitstempel.txt`, 'text/plain',
