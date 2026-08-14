@@ -12,7 +12,7 @@ import {
   onFirstRegistration,
 } from './firebase.js';
 
-const APP_VERSION = '2.1.0';
+const APP_VERSION = '2.1.1';
 
 // ---------------------------------------------------------------------------
 // Kleine Helfer
@@ -2314,18 +2314,25 @@ async function renderMember() {
 // Erneut abspielbar über Einstellungen → „Erklärung".
 // ---------------------------------------------------------------------------
 
-// Schritte für Menschen, die selbst erzählen möchten.
+// Schritte für Menschen, die selbst erzählen möchten – der Fokus liegt
+// auf den Funktionen: aufnehmen (Ton und Video), Erinnerungen anhören,
+// Fragen pflegen und die Familie eintragen.
 const TOUR_TELLER = [
   { view: 'home', target: '.ribbon-card',
     text: 'Hier wartet immer deine nächste Frage. Tippe auf „Erzählen“ und sprich einfach los – die App nimmt dich dabei auf.' },
+  { view: 'home', target: '#btn-home-video',
+    text: 'Lieber mit Bild? Mit „Mit Video“ startest du eine Video-Aufnahme – die Frage bleibt dabei eingeblendet, und du kannst jederzeit zur nächsten blättern.' },
   { view: 'home', target: '#tab-tell',
-    text: 'Über diesen Knopf startest du jederzeit eine neue Aufnahme. Du wirst gefragt, ob du mit Ton oder mit Video erzählen möchtest.' },
-  { view: 'browse', target: '#browse-list .chapter-card',
-    text: 'Unter „Fragen“ findest du alle Kapitel deines Lebensbuchs. Mit dem Stern merkst du dir Fragen, und du kannst jederzeit eigene Fragen hinzufügen.' },
-  { view: 'recordings', target: '#tab-recs',
-    text: 'Unter „Erinnerungen“ liegt alles, was du erzählt hast – zum Anhören und Teilen. Bist du angemeldet, wird jede Aufnahme automatisch in deinem Google Drive gesichert.' },
-  { view: 'home', target: '#btn-settings',
-    text: 'Hinter diesem Knopf liegen die Einstellungen. Unter „Familie“ trägst du ein, wer mitschauen darf – deine Aufnahmen werden dann automatisch für diese Person freigegeben. Und jetzt: Viel Freude beim Erzählen!' },
+    text: 'Und dieser Knopf ganz unten startet von überall eine neue Aufnahme – du wirst jedes Mal gefragt, ob mit Ton oder mit Video.' },
+  { view: 'browse', target: '#browse-list .add-btn',
+    text: 'Unter „Fragen“ stehen alle Kapitel. Mit „Eigene Frage hinzufügen“ ergänzt du jedes Kapitel um eigene Fragen – und ganz unten legst du bei Bedarf ein ganz neues Kapitel an.' },
+  { view: 'browse', target: '#browse-list .question-row',
+    text: 'Jede Frage hat ein kleines ✕ zum Löschen (mit Nachfrage, damit nichts ausversehen passiert) und einen Stern zum Merken. Deine Aufnahmen bleiben beim Löschen einer Frage immer erhalten.' },
+  { view: 'recordings', target: '#recordings-list',
+    text: 'Unter „Erinnerungen“ liegt alles, was du erzählt hast: Antippen zum Anhören oder Anschauen, Teilen mit der Familie – und angemeldet wird jede Aufnahme automatisch in deinem Google Drive gesichert.' },
+  { view: 'settings', prep: () => { state.settingsSection = 'familie'; },
+    target: '#settings-content .settings-section',
+    text: 'Zum Schluss das Wichtigste: Hier unter Einstellungen → „Familie“ tippst du auf „Familien-Mitglied hinzufügen“ und gibst die Google-E-Mail-Adresse der Person ein, die deine Aufnahmen sehen darf. Die Freigabe wird dann automatisch gespeichert und eingerichtet. Viel Freude beim Erzählen!' },
 ];
 
 // Schritte für Familienmitglieder, die Erinnerungen bewahren möchten.
@@ -2359,7 +2366,8 @@ async function startTour(steps) {
 
 async function showTourStep() {
   const step = tourState.steps[tourState.index];
-  if (state.view !== step.view) {
+  if (step.prep) step.prep(); // z. B. den richtigen Einstellungs-Bereich wählen
+  if (state.view !== step.view || step.prep) {
     await showView(step.view);
     await new Promise((r) => setTimeout(r, 350)); // Ansicht erst aufbauen lassen
   }
@@ -2392,14 +2400,20 @@ async function showTourStep() {
   const bh = bubble.offsetHeight;
   const below = rect.top + rect.height / 2 < window.innerHeight / 2;
   const top = below
-    ? Math.min(window.innerHeight - bh - 16, rect.bottom + pad + 54)
-    : Math.max(16, rect.top - pad - bh - 54);
+    ? Math.min(window.innerHeight - bh - 16, rect.bottom + pad + 30)
+    : Math.max(16, rect.top - pad - bh - 30);
   bubble.style.top = `${top}px`;
 
-  // Der Zeiger tippt auf die dem Text zugewandte Kante des Ziels.
+  // Der Zeiger tippt auf die untere rechte Ecke des Ziels –
+  // und weicht der Sprechblase immer aus, damit er nie auf dem Text steht.
   const pointer = $('#tour-pointer');
-  pointer.style.left = `${Math.min(window.innerWidth - 46, Math.max(10, rect.left + rect.width / 2 - 6))}px`;
-  pointer.style.top = below ? `${rect.bottom + 6}px` : `${rect.top - 40}px`;
+  const px = Math.max(rect.left + 10, Math.min(rect.left + rect.width - 34, window.innerWidth - 50));
+  let py = Math.min(rect.top + rect.height - 26, window.innerHeight - 52);
+  if (below) py = Math.min(py, top - 44); // Blase darunter: Zeiger bleibt darüber
+  else py = Math.max(py, top + bh + 8);   // Blase darüber: Zeiger bleibt darunter
+  py = Math.max(py, rect.top - 4);
+  pointer.style.left = `${px}px`;
+  pointer.style.top = `${py}px`;
 }
 
 async function nextTourStep() {
@@ -2415,6 +2429,7 @@ async function nextTourStep() {
 async function endTour() {
   tourState.active = false;
   $('#tour').classList.add('hidden');
+  state.settingsSection = null; // falls die Tour in den Einstellungen endete
   await setMeta('onboardingDone', true);
   if (state.view !== 'home') showView('home');
 }
@@ -2575,7 +2590,8 @@ function wireEvents() {
   });
   $('#tour-next').addEventListener('click', () => nextTourStep());
   $('#tour-blocker').addEventListener('click', () => nextTourStep());
-  $('#tour-skip').addEventListener('click', () => endTour());
+  // „Beenden" fragt einmal nach, damit ein Fehlklick die Tour nicht abbricht.
+  armButton($('#tour-skip'), 'Wirklich beenden?', () => endTour());
   $('#settings-back').addEventListener('click', () => {
     if (state.settingsSection) {
       state.settingsSection = null;
