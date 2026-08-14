@@ -9,9 +9,10 @@ import {
   pushFamilyState, fetchOwnCatalogDoc, queryFamilyMembers, fetchMemberData,
   writeMemberCatalog, fetchOwnRecordingDocs, markOwnRecordingDeleted,
   trashDriveFiles, trashDriveFilesByTitle, deleteMemberRecording,
+  onFirstRegistration,
 } from './firebase.js';
 
-const APP_VERSION = '2.0.1';
+const APP_VERSION = '2.1.0';
 
 // ---------------------------------------------------------------------------
 // Kleine Helfer
@@ -41,6 +42,7 @@ const ICONS = {
   x: '<path d="m7 7 10 10M17 7 7 17"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   star: '<path d="m12 3 2.7 5.8 6.3.7-4.7 4.3 1.3 6.2L12 16.9 6.4 20l1.3-6.2L3 9.5l6.3-.7z"/>',
+  help: '<circle cx="12" cy="12" r="9"/><path d="M9.4 9.2a2.7 2.7 0 1 1 3.9 2.5c-.9.5-1.3 1-1.3 1.9"/><path d="M12 16.5v.5"/>',
 };
 
 function svgIcon(name, { fill = false } = {}) {
@@ -1622,6 +1624,23 @@ async function renderSettings() {
       });
       wrap.appendChild(row);
     }
+
+    // Ganz unten: die geführte Tour jederzeit erneut abspielen.
+    const explain = document.createElement('button');
+    explain.className = 'settings-nav-row';
+    explain.id = 'settings-explain';
+    const exIcon = document.createElement('span');
+    exIcon.className = 'settings-nav-icon';
+    exIcon.innerHTML = svgIcon('help');
+    const exLabel = document.createElement('span');
+    exLabel.className = 'settings-nav-label';
+    exLabel.textContent = 'Erklärung';
+    const exChevron = document.createElement('span');
+    exChevron.className = 'settings-nav-chevron';
+    exChevron.textContent = '›';
+    explain.append(exIcon, exLabel, exChevron);
+    explain.addEventListener('click', () => openRoleDialog());
+    wrap.appendChild(explain);
     return;
   }
 
@@ -2290,6 +2309,121 @@ async function renderMember() {
 }
 
 // ---------------------------------------------------------------------------
+// Onboarding: Rollen-Frage nach der ersten Registrierung und eine geführte
+// Tour, die mit Spotlight, Zeiger und Sprechblase durch die App führt.
+// Erneut abspielbar über Einstellungen → „Erklärung".
+// ---------------------------------------------------------------------------
+
+// Schritte für Menschen, die selbst erzählen möchten.
+const TOUR_TELLER = [
+  { view: 'home', target: '.ribbon-card',
+    text: 'Hier wartet immer deine nächste Frage. Tippe auf „Erzählen“ und sprich einfach los – die App nimmt dich dabei auf.' },
+  { view: 'home', target: '#tab-tell',
+    text: 'Über diesen Knopf startest du jederzeit eine neue Aufnahme. Du wirst gefragt, ob du mit Ton oder mit Video erzählen möchtest.' },
+  { view: 'browse', target: '#browse-list .chapter-card',
+    text: 'Unter „Fragen“ findest du alle Kapitel deines Lebensbuchs. Mit dem Stern merkst du dir Fragen, und du kannst jederzeit eigene Fragen hinzufügen.' },
+  { view: 'recordings', target: '#tab-recs',
+    text: 'Unter „Erinnerungen“ liegt alles, was du erzählt hast – zum Anhören und Teilen. Bist du angemeldet, wird jede Aufnahme automatisch in deinem Google Drive gesichert.' },
+  { view: 'home', target: '#btn-settings',
+    text: 'Hinter diesem Knopf liegen die Einstellungen. Unter „Familie“ trägst du ein, wer mitschauen darf – deine Aufnahmen werden dann automatisch für diese Person freigegeben. Und jetzt: Viel Freude beim Erzählen!' },
+];
+
+// Schritte für Familienmitglieder, die Erinnerungen bewahren möchten.
+const TOUR_KEEPER = [
+  { view: 'home', target: '.cover',
+    text: 'Willkommen! Das ist das Lebensbuch – hier sammeln sich die Erinnerungen deiner Familie.' },
+  { view: 'home', target: '#btn-settings',
+    text: 'Wichtig für den Start: Das ältere Familienmitglied trägt auf seinem Gerät unter Einstellungen → „Familie“ deine Google-E-Mail-Adresse ein. Damit bekommst du Zugriff.' },
+  { view: 'home', target: '.home-tiles',
+    text: 'Sobald das passiert ist, erscheint hier die Kachel „Familie“: Dort siehst du den Fortschritt und alle Aufnahmen deiner Liebsten – abspielbar direkt aus Google Drive.' },
+  { view: 'browse', target: '#browse-list .chapter-card',
+    text: 'In der Familien-Ansicht pflegst du die Fragen deiner Liebsten aus der Ferne: neue Fragen hinzufügen oder welche entfernen – genau so, wie du es hier bei deinen eigenen Fragen siehst.' },
+  { view: 'home', target: '.ribbon-card',
+    text: 'Und natürlich kannst du auch selbst erzählen – dein eigenes Lebensbuch wartet schon auf die erste Geschichte.' },
+];
+
+const tourState = { active: false, steps: [], index: 0 };
+
+function openRoleDialog() {
+  $('#role-dialog').classList.remove('hidden');
+}
+
+async function startTour(steps) {
+  $('#role-dialog').classList.add('hidden');
+  tourState.active = true;
+  tourState.steps = steps;
+  tourState.index = 0;
+  $('#tour').classList.remove('hidden');
+  await showTourStep();
+}
+
+async function showTourStep() {
+  const step = tourState.steps[tourState.index];
+  if (state.view !== step.view) {
+    await showView(step.view);
+    await new Promise((r) => setTimeout(r, 350)); // Ansicht erst aufbauen lassen
+  }
+  const target = document.querySelector(step.target);
+  let rect;
+  if (target) {
+    target.scrollIntoView({ block: 'center' });
+    await new Promise((r) => requestAnimationFrame(r));
+    rect = target.getBoundingClientRect();
+  } else {
+    // Ziel nicht vorhanden (z. B. leere Liste): Hinweis mittig zeigen.
+    rect = { top: window.innerHeight / 2 - 40, left: 24, width: window.innerWidth - 48, height: 80, bottom: window.innerHeight / 2 + 40 };
+  }
+
+  const pad = 8;
+  const spot = $('#tour-spotlight');
+  spot.style.top = `${rect.top - pad}px`;
+  spot.style.left = `${Math.max(4, rect.left - pad)}px`;
+  spot.style.width = `${Math.min(window.innerWidth - 8, rect.width + pad * 2)}px`;
+  spot.style.height = `${rect.height + pad * 2}px`;
+
+  // Sprechblase über oder unter das Ziel, je nachdem, wo Platz ist.
+  const bubble = $('#tour-bubble');
+  $('#tour-text').textContent = step.text;
+  const dots = $('#tour-dots');
+  dots.innerHTML = tourState.steps.map((_, i) => `<i${i === tourState.index ? ' class="on"' : ''}></i>`).join('');
+  $('#tour-next').textContent = tourState.index === tourState.steps.length - 1 ? 'Fertig' : 'Weiter';
+  bubble.style.top = '-1000px'; // erst messen, dann platzieren
+  await new Promise((r) => requestAnimationFrame(r));
+  const bh = bubble.offsetHeight;
+  const below = rect.top + rect.height / 2 < window.innerHeight / 2;
+  const top = below
+    ? Math.min(window.innerHeight - bh - 16, rect.bottom + pad + 54)
+    : Math.max(16, rect.top - pad - bh - 54);
+  bubble.style.top = `${top}px`;
+
+  // Der Zeiger tippt auf die dem Text zugewandte Kante des Ziels.
+  const pointer = $('#tour-pointer');
+  pointer.style.left = `${Math.min(window.innerWidth - 46, Math.max(10, rect.left + rect.width / 2 - 6))}px`;
+  pointer.style.top = below ? `${rect.bottom + 6}px` : `${rect.top - 40}px`;
+}
+
+async function nextTourStep() {
+  if (!tourState.active) return;
+  if (tourState.index >= tourState.steps.length - 1) {
+    endTour();
+    return;
+  }
+  tourState.index += 1;
+  await showTourStep();
+}
+
+async function endTour() {
+  tourState.active = false;
+  $('#tour').classList.add('hidden');
+  await setMeta('onboardingDone', true);
+  if (state.view !== 'home') showView('home');
+}
+
+window.addEventListener('resize', () => {
+  if (tourState.active) showTourStep();
+});
+
+// ---------------------------------------------------------------------------
 // Cloud-Sicherung (optional, local-first)
 // ---------------------------------------------------------------------------
 
@@ -2297,6 +2431,11 @@ async function initCloudFeatures() {
   if (!isConfigured()) return; // Ohne Konfiguration: rein lokale App, keine Login-UI.
   state.cloud = await initCloud();
   if (!state.cloud) return;
+  // Bei der allerersten Registrierung: einmalig das Onboarding anbieten.
+  onFirstRegistration(async () => {
+    if (await getMeta('onboardingDone', false)) return;
+    openRoleDialog();
+  });
   resumeRedirectSignIn(); // iOS-Fallback: Drive-Token nach Redirect-Login einsammeln
   onUserChanged((user) => {
     state.user = user;
@@ -2426,6 +2565,17 @@ function wireEvents() {
     showView('video');
   });
   $('#mode-cancel').addEventListener('click', () => $('#mode-dialog').classList.add('hidden'));
+
+  // Onboarding: Rollen-Wahl und Tour-Steuerung
+  $('#role-teller').addEventListener('click', () => startTour(TOUR_TELLER));
+  $('#role-keeper').addEventListener('click', () => startTour(TOUR_KEEPER));
+  $('#role-skip').addEventListener('click', async () => {
+    $('#role-dialog').classList.add('hidden');
+    await setMeta('onboardingDone', true);
+  });
+  $('#tour-next').addEventListener('click', () => nextTourStep());
+  $('#tour-blocker').addEventListener('click', () => nextTourStep());
+  $('#tour-skip').addEventListener('click', () => endTour());
   $('#settings-back').addEventListener('click', () => {
     if (state.settingsSection) {
       state.settingsSection = null;

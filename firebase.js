@@ -106,12 +106,25 @@ export async function resumeRedirectSignIn() {
   }
 }
 
+// Wird aufgerufen, wenn sich jemand zum allerersten Mal registriert
+// (Firebase unterscheidet neue Konten von bloßen Wieder-Anmeldungen).
+let firstRegistrationCb = null;
+export function onFirstRegistration(cb) {
+  firstRegistrationCb = cb;
+}
+
 function captureTokenFromResult(result) {
   try {
     const cred = fb.authMod.GoogleAuthProvider.credentialFromResult(result);
     if (cred && cred.accessToken) setDriveToken(cred.accessToken, 3500);
   } catch {
     // Ohne Token klappt der Upload später über die stille Erneuerung.
+  }
+  try {
+    const info = fb.authMod.getAdditionalUserInfo(result);
+    if (info && info.isNewUser && firstRegistrationCb) firstRegistrationCb();
+  } catch {
+    // Erkennung ist Komfort – die Anmeldung selbst ist davon unabhängig.
   }
 }
 
