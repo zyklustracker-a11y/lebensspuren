@@ -11,13 +11,53 @@ import {
   trashDriveFiles, trashDriveFilesByTitle, deleteMemberRecording,
 } from './firebase.js';
 
-const APP_VERSION = '1.9.0';
+const APP_VERSION = '2.0.0';
 
 // ---------------------------------------------------------------------------
 // Kleine Helfer
 // ---------------------------------------------------------------------------
 
 const $ = (sel) => document.querySelector(sel);
+
+// Feine Linien-Icons (Inline-SVG) statt Emojis – einheitlicher Stil überall.
+const ICONS = {
+  mic: '<rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/>',
+  video: '<rect x="3" y="7" width="12" height="10" rx="2.5"/><path d="m15 10.5 6-3.5v10l-6-3.5"/>',
+  feather: '<path d="M19 4c-6 1-10 5-11.5 11L6 20l5-1.5C17 17 20.5 12 21 6z"/>',
+  photo: '<rect x="4" y="4" width="16" height="16" rx="2"/><circle cx="9.5" cy="9.5" r="1.6"/><path d="m5 17 4.5-4.5 3 3L16 12l3 3"/>',
+  users: '<circle cx="9" cy="8.5" r="3.2"/><path d="M3.5 19c.6-3 2.8-4.7 5.5-4.7s4.9 1.7 5.5 4.7"/><circle cx="16.8" cy="9.5" r="2.5"/><path d="M15.5 14.6c2.4.2 4.2 1.7 4.9 4.4"/>',
+  user: '<circle cx="12" cy="8" r="3.6"/><path d="M5.5 19.5c.8-3.6 3.3-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/>',
+  sliders: '<path d="M5 7h14M5 12h14M5 17h14"/><circle cx="9" cy="7" r="1.8" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.8" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="1.8" fill="currentColor" stroke="none"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/>',
+  cloud: '<path d="M7 18a4.5 4.5 0 1 1 .8-8.9A6 6 0 0 1 19 10a4 4 0 0 1-1 7.9z"/>',
+  cloudCheck: '<path d="M7 18a4.5 4.5 0 1 1 .8-8.9A6 6 0 0 1 19 10a4 4 0 0 1-1 7.9z"/><path d="m9 14 2 2 4-4"/>',
+  phone: '<rect x="7" y="3" width="10" height="18" rx="2.5"/><path d="M11 17.5h2"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8v.5"/>',
+  play: '<path d="M8 5.5v13l11-6.5z"/>',
+  pauseIc: '<path d="M9 5v14M15 5v14"/>',
+  share: '<path d="M12 15V4"/><path d="m8 8 4-4 4 4"/><path d="M5 13v6h14v-6"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
+  trash: '<path d="M4 7h16M9 7V5h6v2M6.5 7l1 13h9l1-13"/><path d="M10 11v5M14 11v5"/>',
+  x: '<path d="m7 7 10 10M17 7 7 17"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  star: '<path d="m12 3 2.7 5.8 6.3.7-4.7 4.3 1.3 6.2L12 16.9 6.4 20l1.3-6.2L3 9.5l6.3-.7z"/>',
+};
+
+function svgIcon(name, { fill = false } = {}) {
+  const body = ICONS[name] || '';
+  return fill
+    ? `<svg class="ic" viewBox="0 0 24 24" fill="currentColor" stroke="none">${body}</svg>`
+    : `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
+}
+
+// Römische Kapitel-Nummern (Kapitel I, II, III …)
+function romanNumeral(n) {
+  const table = [[1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'], [100, 'C'], [90, 'XC'],
+    [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']];
+  let out = '';
+  for (const [v, s] of table) { while (n >= v) { out += s; n -= v; } }
+  return out;
+}
 
 function formatClock(ms) {
   const totalSec = Math.floor(ms / 1000);
@@ -60,17 +100,23 @@ function showToast(message, kind = '', durationMs = 2600) {
 function armButton(btn, armedLabel, action) {
   let armed = false;
   let timer = null;
-  const original = btn.textContent;
+  const original = btn.innerHTML; // Icons überleben den Bestätigungs-Wechsel
   btn.addEventListener('click', async () => {
     if (!armed) {
       armed = true;
       btn.textContent = armedLabel;
-      timer = setTimeout(() => { armed = false; btn.textContent = original; }, 4000);
+      btn.classList.add('armed-look');
+      timer = setTimeout(() => {
+        armed = false;
+        btn.innerHTML = original;
+        btn.classList.remove('armed-look');
+      }, 4000);
       return;
     }
     clearTimeout(timer);
     armed = false;
-    btn.textContent = original;
+    btn.innerHTML = original;
+    btn.classList.remove('armed-look');
     await action();
   });
 }
@@ -317,9 +363,9 @@ async function removeCategory(cat) {
 // ---------------------------------------------------------------------------
 
 const DESIGNS = [
-  { id: 'natur', name: 'Salbei', hint: 'Ruhig und natürlich', colors: ['#3f7352', '#f6f7f4', '#131a16'] },
-  { id: 'modern', name: 'Indigo', hint: 'Klar und modern', colors: ['#4f46e5', '#fafafa', '#15161a'] },
-  { id: 'warm', name: 'Bernstein', hint: 'Warm und edel', colors: ['#b45309', '#faf6ef', '#1b1613'] },
+  { id: 'warm', name: 'Bernstein', hint: 'Warmes Papier', colors: ['#a8402c', '#f2e8d5', '#1e1811'] },
+  { id: 'natur', name: 'Salbei', hint: 'Ruhig und natürlich', colors: ['#47714b', '#e9eee2', '#141a13'] },
+  { id: 'modern', name: 'Indigo', hint: 'Klar und modern', colors: ['#4f46e5', '#ecebf3', '#131120'] },
 ];
 const MODES = [
   { id: 'auto', name: 'Automatisch' },
@@ -329,8 +375,8 @@ const MODES = [
 
 function themeSetting() {
   return {
-    design: localStorage.getItem('ls-design') || 'natur',
-    mode: localStorage.getItem('ls-mode') || 'dark',
+    design: localStorage.getItem('ls-design') || 'warm',
+    mode: localStorage.getItem('ls-mode') || 'light',
   };
 }
 
@@ -356,6 +402,19 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () 
 
 const VIEWS = ['home', 'audio', 'video', 'browse', 'recordings', 'settings', 'family', 'member'];
 
+// Welche Ansicht welchen Tab in der Leiste unten hervorhebt.
+const TAB_FOR_VIEW = { home: 'home', browse: 'browse', recordings: 'recordings' };
+
+function updateTabbar(name) {
+  const tabbar = $('#tabbar');
+  // Beim Erzählen (Ton/Video) bleibt der Blick frei – keine Leiste.
+  tabbar.classList.toggle('hidden', name === 'audio' || name === 'video');
+  const current = TAB_FOR_VIEW[name] || '';
+  tabbar.querySelectorAll('button').forEach((b) => {
+    b.classList.toggle('current', b.dataset.tab === current);
+  });
+}
+
 async function showView(name) {
   // Laufende Aufnahme beim Verlassen immer sichern, nie verwerfen.
   if (rec.active) await stopRecording('navigation');
@@ -363,10 +422,12 @@ async function showView(name) {
   if (state.view === 'recordings' && name !== 'recordings') closePlayer();
 
   hideAnsweredDialog();
+  $('#mode-dialog').classList.add('hidden');
   state.view = name;
   for (const v of VIEWS) {
     $(`#view-${v}`).classList.toggle('active', v === name);
   }
+  updateTabbar(name);
   window.scrollTo(0, 0);
 
   if (name === 'home') renderHome();
@@ -387,11 +448,11 @@ function renderQuestionDisplays() {
   const q = currentQuestion();
   if (!q) return;
   const answered = progressFor(q.qid).answered;
-  $('#audio-category').textContent = `${q.categoryIcon} ${q.categoryTitle}`;
+  $('#audio-category').textContent = q.categoryTitle;
   $('#audio-question').textContent = q.text;
   $('#audio-counter').textContent = `Frage ${state.questionIndex + 1} von ${state.allQuestions.length}`;
   $('#audio-answered').classList.toggle('hidden', !answered);
-  $('#video-category').textContent = `${q.categoryIcon} ${q.categoryTitle}`;
+  $('#video-category').textContent = q.categoryTitle;
   $('#video-question').textContent = q.text;
   $('#video-answered').classList.toggle('hidden', !answered);
 }
@@ -813,7 +874,7 @@ function resetRecordingUi(mode) {
   timerEl.classList.add('idle');
   timerEl.textContent = '';
   if (mode === 'audio') {
-    $('#audio-hint').textContent = 'Tippe auf den roten Knopf, um zu starten';
+    $('#audio-hint').textContent = 'Tippe auf das Siegel und erzähl einfach los.';
   } else {
     $('#video-flip').classList.remove('hidden');
   }
@@ -984,10 +1045,40 @@ async function renderHome() {
     ? 'Noch keine Aufnahmen'
     : count === 1 ? '1 Aufnahme' : `${count} Aufnahmen`;
 
+  // Buchdeckel: Name aus dem Profil, Untertitel aus den echten Aufnahmen.
+  const name = ((await getMeta('profileName', '')) || '').trim();
+  if (name) {
+    $('#home-cover-over').textContent = 'Das Lebensbuch von';
+    $('#home-cover-name').textContent = name;
+  } else {
+    $('#home-cover-over').textContent = 'Dein';
+    $('#home-cover-name').textContent = 'Lebensbuch';
+  }
+  if (count === 0) {
+    $('#home-cover-sub').textContent = 'Schlag das erste Kapitel auf und erzähl einfach los.';
+  } else {
+    const earliest = recordings.reduce((a, r) => (r.createdAt < a ? r.createdAt : a), recordings[0].createdAt);
+    const started = new Date(earliest).toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
+    $('#home-cover-sub').textContent = `Begonnen im ${started} · ${count === 1 ? '1 Geschichte' : `${count} Geschichten`}`;
+  }
+
+  // „Hier geht es weiter": die nächste unbeantwortete Frage.
+  const total = state.allQuestions.length;
   const answered = state.allQuestions.filter((q) => progressFor(q.qid).answered).length;
-  $('#home-progress').textContent = answered > 0
-    ? `Du hast schon ${answered} von ${state.allQuestions.length} Fragen beantwortet. Weiter so!`
-    : 'Such dir eine Frage aus und erzähl einfach los.';
+  if (total === 0) {
+    $('#home-question-label').textContent = 'Dein Buch wartet';
+    $('#home-question').textContent = 'Füge unter „Fragen stöbern“ eigene Fragen hinzu.';
+  } else {
+    const next = state.allQuestions[nextUnansweredIndex(state.questionIndex)];
+    $('#home-question-label').textContent = answered >= total
+      ? 'Alle Fragen erzählt – weiter so!'
+      : 'Hier geht es weiter';
+    $('#home-question').textContent = next.text;
+  }
+
+  // Fortschrittslinie – zählt immer den aktuellen Stand.
+  $('#home-progress-label').textContent = `${answered} von ${total} erzählt`;
+  $('#home-progress-fill').style.width = total > 0 ? `${Math.round((answered / total) * 100)}%` : '0%';
 }
 
 // ---------------------------------------------------------------------------
@@ -1002,8 +1093,8 @@ function buildQuestionRow(q) {
   const main = document.createElement('button');
   main.className = 'question-row-main';
   const check = document.createElement('span');
-  check.className = 'check';
-  check.textContent = p.answered ? '✓' : '';
+  check.className = `check${p.answered ? '' : ' open'}`;
+  check.innerHTML = svgIcon('feather', { fill: p.answered });
   if (p.answered) check.setAttribute('title', 'Schon beantwortet');
   const label = document.createElement('span');
   label.textContent = q.text;
@@ -1018,7 +1109,7 @@ function buildQuestionRow(q) {
 
   const remove = document.createElement('button');
   remove.className = 'row-remove-btn';
-  remove.textContent = '✕';
+  remove.innerHTML = svgIcon('x');
   remove.setAttribute('aria-label', 'Frage löschen');
   armButton(remove, 'Löschen?', async () => {
     const wasAnswered = progressFor(q.qid).answered;
@@ -1032,7 +1123,7 @@ function buildQuestionRow(q) {
 
   const star = document.createElement('button');
   star.className = `star-btn${p.starred ? ' starred' : ''}`;
-  star.textContent = p.starred ? '★' : '☆';
+  star.innerHTML = svgIcon('star', { fill: p.starred });
   star.setAttribute('aria-label', p.starred ? 'Merken aufheben' : 'Frage merken');
   star.addEventListener('click', async () => {
     await updateProgress(q.qid, { starred: !progressFor(q.qid).starred });
@@ -1075,7 +1166,7 @@ function buildInlineForm(placeholder, onSave, onCancel) {
 function buildAddButton(label, placeholder, onSave, onCancel = () => renderBrowse()) {
   const btn = document.createElement('button');
   btn.className = 'add-btn';
-  btn.textContent = label;
+  btn.innerHTML = `${svgIcon('plus')} ${label}`;
   btn.addEventListener('click', () => {
     const { wrap, input } = buildInlineForm(placeholder, onSave, onCancel);
     btn.replaceWith(wrap);
@@ -1093,54 +1184,69 @@ function renderBrowse() {
   if (starred.length > 0) {
     const heading = document.createElement('h2');
     heading.className = 'browse-category';
-    heading.textContent = '⭐ Deine gemerkten Fragen';
+    heading.innerHTML = `<span style="color:var(--star)">${svgIcon('star', { fill: true })}</span> Deine gemerkten Fragen`;
     list.appendChild(heading);
-    for (const q of starred) list.appendChild(buildQuestionRow(q));
+    const card = document.createElement('div');
+    card.className = 'chapter-card';
+    for (const q of starred) card.appendChild(buildQuestionRow(q));
+    list.appendChild(card);
   }
 
+  let chapterNo = 0;
   for (const cat of state.catalog) {
+    chapterNo += 1;
     const heading = document.createElement('h2');
     heading.className = 'browse-category';
-    heading.textContent = `${cat.icon} ${cat.title}`;
+    const no = document.createElement('span');
+    no.className = 'chapter-no';
+    no.textContent = `Kapitel ${romanNumeral(chapterNo)}`;
+    const t = document.createElement('span');
+    t.textContent = cat.title;
+    heading.append(no, t);
     const answeredCount = cat.questions.filter((q) => progressFor(q.qid).answered).length;
     if (answeredCount > 0) {
       const prog = document.createElement('span');
       prog.className = 'browse-category-progress';
-      prog.textContent = `${answeredCount} von ${cat.questions.length} beantwortet`;
+      prog.textContent = `${answeredCount} von ${cat.questions.length} erzählt`;
       heading.appendChild(prog);
     }
     const removeCat = document.createElement('button');
     removeCat.className = 'row-remove-btn category-remove';
-    removeCat.textContent = '✕';
-    removeCat.setAttribute('aria-label', `Kategorie „${cat.title}" löschen`);
+    removeCat.innerHTML = svgIcon('x');
+    removeCat.setAttribute('aria-label', `Kapitel „${cat.title}" löschen`);
     armButton(removeCat, 'Löschen?', async () => {
       await removeCategory(cat);
       renderBrowse();
-      showToast('Kategorie entfernt – vorhandene Aufnahmen bleiben erhalten');
+      showToast('Kapitel entfernt – vorhandene Aufnahmen bleiben erhalten');
     });
     heading.appendChild(removeCat);
     list.appendChild(heading);
 
+    const card = document.createElement('div');
+    card.className = 'chapter-card';
     for (const q of cat.questions) {
-      list.appendChild(buildQuestionRow(q));
+      card.appendChild(buildQuestionRow(q));
     }
-
-    list.appendChild(buildAddButton('＋ Eigene Frage hinzufügen', 'Deine Frage …', async (text) => {
+    card.appendChild(buildAddButton('Eigene Frage hinzufügen', 'Deine Frage …', async (text) => {
       await addCustomQuestion(cat.id, text);
       renderBrowse();
       showToast('✓ Frage hinzugefügt', 'success');
     }));
+    list.appendChild(card);
   }
 
   const catHeading = document.createElement('h2');
   catHeading.className = 'browse-category';
-  catHeading.textContent = '🗂️ Neue Kategorie';
+  catHeading.textContent = 'Neues Kapitel';
   list.appendChild(catHeading);
-  list.appendChild(buildAddButton('＋ Eigene Kategorie hinzufügen', 'Name der Kategorie …', async (text) => {
+  const addCard = document.createElement('div');
+  addCard.className = 'chapter-card';
+  addCard.appendChild(buildAddButton('Eigenes Kapitel hinzufügen', 'Name des Kapitels …', async (text) => {
     await addCustomCategory(text);
     renderBrowse();
-    showToast('✓ Kategorie hinzugefügt – füge ihr jetzt Fragen hinzu', 'success', 3500);
+    showToast('✓ Kapitel hinzugefügt – füge ihm jetzt Fragen hinzu', 'success', 3500);
   }));
+  list.appendChild(addCard);
 }
 
 // ---------------------------------------------------------------------------
@@ -1169,7 +1275,7 @@ async function renderRecordings() {
   if (recordings.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'recordings-empty';
-    empty.textContent = 'Hier erscheinen deine Aufnahmen, sobald du etwas erzählt hast. Tipp auf „Erzählen mit Ton" und leg einfach los!';
+    empty.textContent = 'Hier erscheinen deine Erinnerungen, sobald du etwas erzählt hast. Tippe unten auf „Erzählen" und leg einfach los!';
     list.appendChild(empty);
     return;
   }
@@ -1181,10 +1287,10 @@ async function renderRecordings() {
     reminder.className = 'share-reminder';
     const countText = unsecured === 1 ? '1 Aufnahme ist' : `${unsecured} Aufnahmen sind`;
     if (state.user) {
-      reminder.textContent = `💡 ${countText} noch nicht in Google Drive gesichert. `;
+      reminder.textContent = `${countText} noch nicht in Google Drive gesichert. `;
       const syncBtn = document.createElement('button');
       syncBtn.className = 'action-btn';
-      syncBtn.textContent = '☁️ Jetzt sichern';
+      syncBtn.innerHTML = `${svgIcon('cloud')} Jetzt sichern`;
       syncBtn.addEventListener('click', async () => {
         syncBtn.disabled = true;
         const token = await getDriveToken({ interactive: true });
@@ -1198,7 +1304,7 @@ async function renderRecordings() {
       });
       reminder.appendChild(syncBtn);
     } else {
-      reminder.textContent = `💡 Tipp: ${countText} bisher nur auf diesem Gerät. Teile sie mit deiner Familie, damit nichts verloren geht.`;
+      reminder.textContent = `Tipp: ${countText} bisher nur auf diesem Gerät. Teile sie mit deiner Familie, damit nichts verloren geht.`;
     }
     list.appendChild(reminder);
   }
@@ -1213,9 +1319,21 @@ function buildRecordingCard(recording) {
   card.className = 'recording-card';
   card.dataset.id = recording.id;
 
+  // Polaroid-Kopf mit Klebestreifen und Abspiel-Knopf.
+  const img = document.createElement('div');
+  img.className = `pol-img${recording.mode === 'video' ? ' video' : ''}`;
+  const tape = document.createElement('span');
+  tape.className = 'pol-tape';
+  const playBtn = document.createElement('button');
+  playBtn.className = 'play-btn';
+  playBtn.innerHTML = svgIcon('play', { fill: true });
+  playBtn.setAttribute('aria-label', 'Abspielen');
+  playBtn.addEventListener('click', () => togglePlayback(recording, card, playBtn));
+  img.append(tape, playBtn);
+
   const title = document.createElement('h3');
   title.className = 'recording-title';
-  title.textContent = `${recording.mode === 'video' ? '🎥' : '🎙️'} ${recording.title}`;
+  title.textContent = recording.title;
 
   const meta = document.createElement('p');
   meta.className = 'recording-meta';
@@ -1231,24 +1349,19 @@ function buildRecordingCard(recording) {
   const actions = document.createElement('div');
   actions.className = 'recording-actions';
 
-  const playBtn = document.createElement('button');
-  playBtn.className = 'action-btn play';
-  playBtn.textContent = '▶ Abspielen';
-  playBtn.addEventListener('click', () => togglePlayback(recording, card, playBtn));
-
   const shareBtn = document.createElement('button');
   shareBtn.className = 'action-btn';
-  shareBtn.textContent = '📤 Teilen';
+  shareBtn.innerHTML = `${svgIcon('share')} Teilen`;
   shareBtn.addEventListener('click', () => shareRecording(recording));
 
   const tsBtn = document.createElement('button');
   tsBtn.className = 'action-btn';
-  tsBtn.textContent = '📝 Zeitstempel';
+  tsBtn.innerHTML = `${svgIcon('clock')} Zeitstempel`;
   tsBtn.addEventListener('click', () => exportTimestamps(recording));
 
   const deleteBtn = document.createElement('button');
   deleteBtn.className = 'action-btn danger';
-  deleteBtn.textContent = '🗑️ Löschen';
+  deleteBtn.innerHTML = `${svgIcon('trash')} Löschen`;
   armButton(deleteBtn, 'Wirklich löschen?', async () => {
     await idb.delete('recordings', recording.id);
     closePlayer();
@@ -1257,21 +1370,21 @@ function buildRecordingCard(recording) {
     scheduleFamilySync(); // Drive-Papierkorb und Familien-Ansicht nachziehen
   });
 
-  actions.append(playBtn, shareBtn, tsBtn, deleteBtn);
-  card.append(title, meta, actions);
+  actions.append(shareBtn, tsBtn, deleteBtn);
+  card.append(img, title, meta, actions);
   return card;
 }
 
 function applySyncBadge(badge, recording) {
   if (recording.uploaded) {
     badge.className = 'sync-badge synced';
-    badge.textContent = '☁️ In Google Drive gesichert';
+    badge.innerHTML = `${svgIcon('cloudCheck')} In Google Drive gesichert`;
   } else if (state.uploadingIds.has(recording.id)) {
     badge.className = 'sync-badge pending';
-    badge.textContent = '⏳ Wird gerade gesichert …';
+    badge.innerHTML = `${svgIcon('cloud')} Wird gerade gesichert …`;
   } else {
     badge.className = 'sync-badge local';
-    badge.textContent = '📱 Nur auf diesem Gerät';
+    badge.innerHTML = `${svgIcon('phone')} Nur auf diesem Gerät`;
   }
 }
 
@@ -1280,12 +1393,12 @@ function togglePlayback(recording, card, playBtn) {
   if (existing) {
     existing.remove();
     closePlayer();
-    playBtn.textContent = '▶ Abspielen';
+    playBtn.innerHTML = svgIcon('play', { fill: true });
     return;
   }
   // Nur ein Player gleichzeitig
   document.querySelectorAll('.recording-player').forEach((el) => el.remove());
-  document.querySelectorAll('.action-btn.play').forEach((b) => { b.textContent = '▶ Abspielen'; });
+  document.querySelectorAll('.play-btn').forEach((b) => { b.innerHTML = svgIcon('play', { fill: true }); });
   closePlayer();
 
   const el = document.createElement(recording.mode === 'video' ? 'video' : 'audio');
@@ -1295,7 +1408,8 @@ function togglePlayback(recording, card, playBtn) {
   playerUrl = URL.createObjectURL(recording.blob);
   el.src = playerUrl;
   card.appendChild(el);
-  playBtn.textContent = '⏸ Schließen';
+  playBtn.innerHTML = svgIcon('pauseIc');
+  playBtn.setAttribute('aria-label', 'Schließen');
   el.play().catch(() => {});
 }
 
@@ -1419,10 +1533,10 @@ function settingsSection(title) {
 // der Inhalt öffnet sich als Unterseite – aufgeräumt und für die
 // Großeltern nicht versehentlich verstellbar.
 const SETTINGS_SECTIONS = [
-  { id: 'familie', icon: '👨‍👩‍👧‍👦', title: 'Familie' },
-  { id: 'aussehen', icon: '🎨', title: 'Aussehen' },
-  { id: 'konto', icon: '☁️', title: 'Konto & Sicherung' },
-  { id: 'ueber', icon: 'ℹ️', title: 'Über die App' },
+  { id: 'familie', icon: 'users', title: 'Familie' },
+  { id: 'aussehen', icon: 'sun', title: 'Aussehen' },
+  { id: 'konto', icon: 'cloudCheck', title: 'Konto & Sicherung' },
+  { id: 'ueber', icon: 'info', title: 'Über die App' },
 ];
 
 async function renderSettings() {
@@ -1432,7 +1546,7 @@ async function renderSettings() {
   $('#settings-title').textContent = section
     ? SETTINGS_SECTIONS.find((s) => s.id === section).title
     : 'Einstellungen';
-  $('#settings-back').textContent = section ? '‹ Einstellungen' : '‹ Zurück';
+  $('#settings-back-label').textContent = section ? 'Einstellungen' : 'Zum Buch';
 
   if (!section) {
     for (const s of SETTINGS_SECTIONS) {
@@ -1440,7 +1554,7 @@ async function renderSettings() {
       row.className = 'settings-nav-row';
       const icon = document.createElement('span');
       icon.className = 'settings-nav-icon';
-      icon.textContent = s.icon;
+      icon.innerHTML = svgIcon(s.icon);
       const label = document.createElement('span');
       label.className = 'settings-nav-label';
       label.textContent = s.title;
@@ -1566,7 +1680,7 @@ function renderAccountSection(wrap) {
     account.appendChild(note);
     const signInBtn = document.createElement('button');
     signInBtn.className = 'action-btn primary-action settings-btn';
-    signInBtn.textContent = '☁️ Mit Google anmelden';
+    signInBtn.innerHTML = `${svgIcon('cloud')} Mit Google anmelden`;
     signInBtn.addEventListener('click', async () => {
       try {
         await signInWithGoogle();
@@ -1611,7 +1725,7 @@ async function renderFamilySection(wrap) {
       label.textContent = email;
       const remove = document.createElement('button');
       remove.className = 'row-remove-btn';
-      remove.textContent = '✕';
+      remove.innerHTML = svgIcon('x');
       armButton(remove, 'Entfernen?', async () => {
         await removeFamilyEmail(email);
         showToast('Zugriff entfernt');
@@ -1620,7 +1734,7 @@ async function renderFamilySection(wrap) {
       row.append(label, remove);
       family.appendChild(row);
     }
-    family.appendChild(buildAddButton('＋ Familien-Mitglied hinzufügen', 'E-Mail-Adresse (Google-Konto) …', async (text) => {
+    family.appendChild(buildAddButton('Familien-Mitglied hinzufügen', 'E-Mail-Adresse (Google-Konto) …', async (text) => {
       const ok = await addFamilyEmail(text);
       if (ok !== false) renderSettings();
     }, () => renderSettings()));
@@ -1886,7 +2000,7 @@ async function renderFamily() {
     tile.className = 'big-btn';
     const icon = document.createElement('span');
     icon.className = 'btn-icon';
-    icon.textContent = '👤';
+    icon.innerHTML = svgIcon('user');
     const label = document.createElement('span');
     label.textContent = m.name || 'Ohne Namen';
     const sub = document.createElement('span');
@@ -1909,7 +2023,8 @@ function buildMemberRecordingCard(uid, r, isDeleted) {
   card.className = 'recording-card';
   const h = document.createElement('h3');
   h.className = 'recording-title';
-  h.textContent = `${r.mode === 'video' ? '🎥' : '🎙️'} ${r.title || r.id}`;
+  h.innerHTML = `${svgIcon(r.mode === 'video' ? 'video' : 'mic')} `;
+  h.appendChild(document.createTextNode(r.title || r.id));
   const meta = document.createElement('p');
   meta.className = 'recording-meta';
   meta.textContent = `${r.createdAt ? formatDateTime(r.createdAt) : ''} · ${formatClock(r.durationMs || 0)} Minuten`;
@@ -1919,8 +2034,8 @@ function buildMemberRecordingCard(uid, r, isDeleted) {
   card.append(h, meta);
   if (r.driveFileId) {
     const open = document.createElement('button');
-    open.className = 'action-btn play';
-    open.textContent = isDeleted ? '▶ Im Papierkorb abspielen' : '▶ In Google Drive abspielen';
+    open.className = 'action-btn';
+    open.innerHTML = `${svgIcon('play', { fill: true })} ${isDeleted ? 'Im Papierkorb abspielen' : 'In Google Drive abspielen'}`;
     open.addEventListener('click', () => {
       window.open(`https://drive.google.com/file/d/${r.driveFileId}/view`, '_blank', 'noopener');
     });
@@ -1930,7 +2045,7 @@ function buildMemberRecordingCard(uid, r, isDeleted) {
     const purge = document.createElement('button');
     purge.className = 'action-btn danger';
     purge.style.marginTop = '10px';
-    purge.textContent = '🗑️ Endgültig entfernen';
+    purge.innerHTML = `${svgIcon('trash')} Endgültig entfernen`;
     armButton(purge, 'Wirklich endgültig?', async () => {
       try {
         await deleteMemberRecording(uid, r.id);
@@ -1989,7 +2104,7 @@ async function renderMember() {
 
   const recHeading = document.createElement('h2');
   recHeading.className = 'browse-category';
-  recHeading.textContent = `📚 Aufnahmen (${active.length})`;
+  recHeading.textContent = `Aufnahmen (${active.length})`;
   wrap.appendChild(recHeading);
   if (active.length === 0) {
     const none = document.createElement('p');
@@ -2005,7 +2120,7 @@ async function renderMember() {
   if (deleted.length > 0) {
     const delHeading = document.createElement('h2');
     delHeading.className = 'browse-category';
-    delHeading.textContent = `🗑️ Gelöschte Aufnahmen (${deleted.length})`;
+    delHeading.textContent = `Gelöschte Aufnahmen (${deleted.length})`;
     wrap.appendChild(delHeading);
     const delNote = document.createElement('p');
     delNote.className = 'settings-note small';
@@ -2017,28 +2132,37 @@ async function renderMember() {
   }
 
   // --- Fragenkatalog mit Fernverwaltung ---
+  let chapterNo = 0;
   for (const cat of data.catalog) {
+    chapterNo += 1;
     const heading = document.createElement('h2');
     heading.className = 'browse-category';
-    heading.textContent = `${cat.icon} ${cat.title}`;
+    const no = document.createElement('span');
+    no.className = 'chapter-no';
+    no.textContent = `Kapitel ${romanNumeral(chapterNo)}`;
+    const t = document.createElement('span');
+    t.textContent = cat.title;
+    heading.append(no, t);
     const answeredCount = cat.questions.filter((q) => data.progress[q.qid] && data.progress[q.qid].answered).length;
     if (answeredCount > 0) {
       const prog = document.createElement('span');
       prog.className = 'browse-category-progress';
-      prog.textContent = `${answeredCount} von ${cat.questions.length} beantwortet`;
+      prog.textContent = `${answeredCount} von ${cat.questions.length} erzählt`;
       heading.appendChild(prog);
     }
     const removeCat = document.createElement('button');
     removeCat.className = 'row-remove-btn category-remove';
-    removeCat.textContent = '✕';
-    removeCat.setAttribute('aria-label', `Kategorie „${cat.title}" löschen`);
+    removeCat.innerHTML = svgIcon('x');
+    removeCat.setAttribute('aria-label', `Kapitel „${cat.title}" löschen`);
     armButton(removeCat, 'Löschen?', async () => {
       await mutateMemberCatalog(uid, (c) => applyCategoryRemoval(c, cat));
-      showToast('Kategorie entfernt – vorhandene Aufnahmen bleiben erhalten');
+      showToast('Kapitel entfernt – vorhandene Aufnahmen bleiben erhalten');
     });
     heading.appendChild(removeCat);
     wrap.appendChild(heading);
 
+    const chapterCard = document.createElement('div');
+    chapterCard.className = 'chapter-card';
     for (const q of cat.questions) {
       const p = data.progress[q.qid] || {};
       const row = document.createElement('div');
@@ -2046,15 +2170,15 @@ async function renderMember() {
       const main = document.createElement('div');
       main.className = 'question-row-main';
       const check = document.createElement('span');
-      check.className = 'check';
-      check.textContent = p.answered ? '✓' : '';
+      check.className = `check${p.answered ? '' : ' open'}`;
+      check.innerHTML = svgIcon('feather', { fill: !!p.answered });
       const label = document.createElement('span');
       label.textContent = q.text;
       main.append(check, label);
       row.appendChild(main);
       const remove = document.createElement('button');
       remove.className = 'row-remove-btn';
-      remove.textContent = '✕';
+      remove.innerHTML = svgIcon('x');
       remove.setAttribute('aria-label', 'Frage löschen');
       armButton(remove, 'Löschen?', async () => {
         await mutateMemberCatalog(uid, (c) => applyQuestionRemoval(c, q));
@@ -2067,13 +2191,13 @@ async function renderMember() {
         const star = document.createElement('span');
         star.className = 'star-btn starred';
         star.style.pointerEvents = 'none';
-        star.textContent = '★';
+        star.innerHTML = svgIcon('star', { fill: true });
         row.appendChild(star);
       }
-      wrap.appendChild(row);
+      chapterCard.appendChild(row);
     }
 
-    wrap.appendChild(buildAddButton('＋ Frage aus der Ferne hinzufügen', 'Deine Frage …', async (text) => {
+    chapterCard.appendChild(buildAddButton('Frage aus der Ferne hinzufügen', 'Deine Frage …', async (text) => {
       await mutateMemberCatalog(uid, (c) => {
         if (!c.questions[cat.id]) c.questions[cat.id] = [];
         c.questions[cat.id].push({
@@ -2083,19 +2207,23 @@ async function renderMember() {
       });
       showToast('✓ Frage hinzugefügt – kommt beim nächsten App-Start an', 'success', 3500);
     }, () => renderMember()));
+    wrap.appendChild(chapterCard);
   }
 
   const catHeading = document.createElement('h2');
   catHeading.className = 'browse-category';
-  catHeading.textContent = '🗂️ Neue Kategorie';
+  catHeading.textContent = 'Neues Kapitel';
   wrap.appendChild(catHeading);
-  wrap.appendChild(buildAddButton('＋ Kategorie aus der Ferne hinzufügen', 'Name der Kategorie …', async (text) => {
+  const addChapterCard = document.createElement('div');
+  addChapterCard.className = 'chapter-card';
+  addChapterCard.appendChild(buildAddButton('Kapitel aus der Ferne hinzufügen', 'Name des Kapitels …', async (text) => {
     await mutateMemberCatalog(uid, (c) => {
       if (!c.categories) c.categories = [];
       c.categories.push({ id: `cc-${Date.now().toString(36)}`, title: text });
     });
-    showToast('✓ Kategorie hinzugefügt', 'success');
+    showToast('✓ Kapitel hinzugefügt', 'success');
   }, () => renderMember()));
+  wrap.appendChild(addChapterCard);
 
   const hint = document.createElement('p');
   hint.className = 'settings-note small';
@@ -2218,6 +2346,28 @@ function wireEvents() {
     state.settingsSection = null;
     showView('settings');
   });
+  $('#btn-home-settings-tile').addEventListener('click', () => {
+    state.settingsSection = null;
+    showView('settings');
+  });
+
+  // Feste Bereichs-Leiste unten
+  $('#tab-home').addEventListener('click', () => showView('home'));
+  $('#tab-browse').addEventListener('click', () => showView('browse'));
+  $('#tab-recs').addEventListener('click', () => showView('recordings'));
+  // „Erzählen" fragt erst: mit Ton oder mit Video?
+  $('#tab-tell').addEventListener('click', () => $('#mode-dialog').classList.remove('hidden'));
+  $('#mode-audio').addEventListener('click', () => {
+    $('#mode-dialog').classList.add('hidden');
+    continueAtNextUnanswered();
+    showView('audio');
+  });
+  $('#mode-video').addEventListener('click', () => {
+    $('#mode-dialog').classList.add('hidden');
+    continueAtNextUnanswered();
+    showView('video');
+  });
+  $('#mode-cancel').addEventListener('click', () => $('#mode-dialog').classList.add('hidden'));
   $('#settings-back').addEventListener('click', () => {
     if (state.settingsSection) {
       state.settingsSection = null;
