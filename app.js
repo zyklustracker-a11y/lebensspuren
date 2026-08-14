@@ -11,7 +11,7 @@ import {
   trashDriveFiles, trashDriveFilesByTitle, deleteMemberRecording,
 } from './firebase.js';
 
-const APP_VERSION = '2.0.0';
+const APP_VERSION = '2.0.1';
 
 // ---------------------------------------------------------------------------
 // Kleine Helfer
@@ -419,7 +419,7 @@ async function showView(name) {
   // Laufende Aufnahme beim Verlassen immer sichern, nie verwerfen.
   if (rec.active) await stopRecording('navigation');
   if (state.view === 'video' && name !== 'video') stopCameraPreview();
-  if (state.view === 'recordings' && name !== 'recordings') closePlayer();
+  if (state.view === 'recordings' && name !== 'recordings') { closePlayer(); releaseThumbUrls(); }
 
   hideAnsweredDialog();
   $('#mode-dialog').classList.add('hidden');
@@ -1210,16 +1210,20 @@ function renderBrowse() {
       prog.textContent = `${answeredCount} von ${cat.questions.length} erzählt`;
       heading.appendChild(prog);
     }
-    const removeCat = document.createElement('button');
-    removeCat.className = 'row-remove-btn category-remove';
-    removeCat.innerHTML = svgIcon('x');
-    removeCat.setAttribute('aria-label', `Kapitel „${cat.title}" löschen`);
-    armButton(removeCat, 'Löschen?', async () => {
-      await removeCategory(cat);
-      renderBrowse();
-      showToast('Kapitel entfernt – vorhandene Aufnahmen bleiben erhalten');
-    });
-    heading.appendChild(removeCat);
+    // Schutz vor Fehlklicks: Ein ganzes Kapitel lässt sich erst löschen,
+    // wenn alle seine Fragen einzeln entfernt wurden.
+    if (cat.questions.length === 0) {
+      const removeCat = document.createElement('button');
+      removeCat.className = 'row-remove-btn category-remove';
+      removeCat.innerHTML = svgIcon('x');
+      removeCat.setAttribute('aria-label', `Kapitel „${cat.title}" löschen`);
+      armButton(removeCat, 'Löschen?', async () => {
+        await removeCategory(cat);
+        renderBrowse();
+        showToast('Kapitel entfernt – vorhandene Aufnahmen bleiben erhalten');
+      });
+      heading.appendChild(removeCat);
+    }
     list.appendChild(heading);
 
     const card = document.createElement('div');
@@ -1262,8 +1266,18 @@ function closePlayer() {
   }
 }
 
+// Objekt-Adressen der Video-Vorschaubilder – werden beim nächsten
+// Neuaufbau der Liste bzw. beim Verlassen der Ansicht freigegeben.
+let thumbUrls = [];
+
+function releaseThumbUrls() {
+  thumbUrls.forEach((u) => URL.revokeObjectURL(u));
+  thumbUrls = [];
+}
+
 async function renderRecordings() {
   closePlayer();
+  releaseThumbUrls();
   const list = $('#recordings-list');
   list.textContent = '';
 
@@ -1319,11 +1333,40 @@ function buildRecordingCard(recording) {
   card.className = 'recording-card';
   card.dataset.id = recording.id;
 
-  // Polaroid-Kopf mit Klebestreifen und Abspiel-Knopf.
+  // Polaroid-Kopf mit Klebestreifen, echtem Vorschaubild und Abspiel-Knopf.
+  // Hier läuft später auch die Wiedergabe – direkt im Rahmen.
   const img = document.createElement('div');
   img.className = `pol-img${recording.mode === 'video' ? ' video' : ''}`;
   const tape = document.createElement('span');
   tape.className = 'pol-tape';
+
+  if (recording.mode === 'video') {
+    // Titelbild: das erste Bild des Videos, direkt aus der Aufnahme.
+    const thumb = document.createElement('video');
+    thumb.className = 'pol-thumb';
+    thumb.muted = true;
+    thumb.setAttribute('playsinline', '');
+    thumb.preload = 'metadata';
+    const url = URL.createObjectURL(recording.blob);
+    thumbUrls.push(url);
+    thumb.src = url;
+    // Manche Browser zeigen erst nach einem Mini-Sprung ein Bild.
+    thumb.addEventListener('loadedmetadata', () => {
+      try { thumb.currentTime = 0.1; } catch { /* dann eben Bild 0 */ }
+    }, { once: true });
+    img.appendChild(thumb);
+  } else {
+    // Sprachmemo: Mikrofon und Klangwellen als Erkennungsbild.
+    const deco = document.createElement('div');
+    deco.className = 'pol-audio-deco';
+    const bars = Array.from({ length: 26 }, (_, i) => {
+      const seed = (recording.id.charCodeAt((i * 7) % recording.id.length) || 65) % 60;
+      return `<i style="height:${28 + seed}%"></i>`;
+    }).join('');
+    deco.innerHTML = `${svgIcon('mic')}<span class="pol-bars">${bars}</span>`;
+    img.appendChild(deco);
+  }
+
   const playBtn = document.createElement('button');
   playBtn.className = 'play-btn';
   playBtn.innerHTML = svgIcon('play', { fill: true });
@@ -1388,17 +1431,27 @@ function applySyncBadge(badge, recording) {
   }
 }
 
+// Spielt die Aufnahme direkt im Polaroid-Rahmen ab: Videos ziehen den
+// Rahmen auf ihre echte Größe auf, Sprachmemos behalten ihr Erkennungsbild
+// und bekommen die Abspiel-Leiste unten in den Rahmen gelegt.
 function togglePlayback(recording, card, playBtn) {
+  const frame = card.querySelector('.pol-img');
   const existing = card.querySelector('.recording-player');
   if (existing) {
     existing.remove();
+    frame.classList.remove('playing');
     closePlayer();
     playBtn.innerHTML = svgIcon('play', { fill: true });
+    playBtn.setAttribute('aria-label', 'Abspielen');
     return;
   }
   // Nur ein Player gleichzeitig
   document.querySelectorAll('.recording-player').forEach((el) => el.remove());
-  document.querySelectorAll('.play-btn').forEach((b) => { b.innerHTML = svgIcon('play', { fill: true }); });
+  document.querySelectorAll('.pol-img.playing').forEach((f) => f.classList.remove('playing'));
+  document.querySelectorAll('.play-btn').forEach((b) => {
+    b.innerHTML = svgIcon('play', { fill: true });
+    b.setAttribute('aria-label', 'Abspielen');
+  });
   closePlayer();
 
   const el = document.createElement(recording.mode === 'video' ? 'video' : 'audio');
@@ -1407,8 +1460,9 @@ function togglePlayback(recording, card, playBtn) {
   el.setAttribute('playsinline', '');
   playerUrl = URL.createObjectURL(recording.blob);
   el.src = playerUrl;
-  card.appendChild(el);
-  playBtn.innerHTML = svgIcon('pauseIc');
+  frame.appendChild(el);
+  frame.classList.add('playing');
+  playBtn.innerHTML = svgIcon('x');
   playBtn.setAttribute('aria-label', 'Schließen');
   el.play().catch(() => {});
 }
@@ -2150,15 +2204,19 @@ async function renderMember() {
       prog.textContent = `${answeredCount} von ${cat.questions.length} erzählt`;
       heading.appendChild(prog);
     }
-    const removeCat = document.createElement('button');
-    removeCat.className = 'row-remove-btn category-remove';
-    removeCat.innerHTML = svgIcon('x');
-    removeCat.setAttribute('aria-label', `Kapitel „${cat.title}" löschen`);
-    armButton(removeCat, 'Löschen?', async () => {
-      await mutateMemberCatalog(uid, (c) => applyCategoryRemoval(c, cat));
-      showToast('Kapitel entfernt – vorhandene Aufnahmen bleiben erhalten');
-    });
-    heading.appendChild(removeCat);
+    // Gleicher Schutz wie im eigenen Konto: Kapitel erst löschbar,
+    // wenn alle Fragen einzeln entfernt wurden.
+    if (cat.questions.length === 0) {
+      const removeCat = document.createElement('button');
+      removeCat.className = 'row-remove-btn category-remove';
+      removeCat.innerHTML = svgIcon('x');
+      removeCat.setAttribute('aria-label', `Kapitel „${cat.title}" löschen`);
+      armButton(removeCat, 'Löschen?', async () => {
+        await mutateMemberCatalog(uid, (c) => applyCategoryRemoval(c, cat));
+        showToast('Kapitel entfernt – vorhandene Aufnahmen bleiben erhalten');
+      });
+      heading.appendChild(removeCat);
+    }
     wrap.appendChild(heading);
 
     const chapterCard = document.createElement('div');

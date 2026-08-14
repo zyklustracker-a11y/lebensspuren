@@ -1214,17 +1214,99 @@ input[type="text"]:focus {
 .recording-card:nth-child(even) { transform: rotate(0.5deg); }
 
 .pol-img {
-  height: 110px;
+  min-height: 130px;
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
   background: radial-gradient(80% 120% at 30% 20%, color-mix(in srgb, var(--gold) 38%, var(--surface-2)), color-mix(in srgb, var(--gold) 62%, var(--text) 12%) 85%);
   margin-bottom: 10px;
 }
 
 .pol-img.video {
-  background: radial-gradient(80% 120% at 70% 30%, color-mix(in srgb, var(--accent) 30%, var(--surface-2)), color-mix(in srgb, var(--accent) 55%, var(--text) 15%) 85%);
+  background: #17120c;
+}
+
+/* Titelbild des Videos (erstes Bild der Aufnahme) */
+.pol-thumb {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+/* Erkennungsbild für Sprachmemos: Mikrofon + Klangwellen */
+.pol-audio-deco {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: color-mix(in srgb, var(--text) 55%, transparent);
+  pointer-events: none;
+}
+
+.pol-audio-deco .ic {
+  font-size: 26px;
+}
+
+.pol-bars {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 34px;
+}
+
+.pol-bars i {
+  display: block;
+  width: 3.5px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.pol-img .play-btn {
+  position: relative;
+  z-index: 2;
+}
+
+/* Wiedergabe läuft im Rahmen: Video zieht ihn auf seine echte Größe auf,
+   der Knopf wird zum kleinen Schließen-Kreuz oben rechts. */
+.pol-img.playing {
+  height: auto;
+  display: block;
+}
+
+.pol-img.playing .play-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 40px;
+  height: 40px;
+  font-size: 15px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+}
+
+.pol-img.playing .pol-tape {
+  display: none;
+}
+
+.pol-img.playing:has(video) .pol-thumb {
+  display: none;
+}
+
+/* Sprachmemo: Erkennungsbild bleibt, die Abspiel-Leiste liegt unten im Rahmen */
+.pol-img.playing:has(audio.recording-player) {
+  min-height: 170px;
+}
+
+.pol-img.playing:has(audio.recording-player) .pol-audio-deco {
+  bottom: 56px;
 }
 
 .pol-tape {
@@ -1302,16 +1384,21 @@ input[type="text"]:focus {
   box-shadow: none;
 }
 
-.recording-player {
+video.recording-player {
   display: block;
   width: 100%;
-  margin-top: 12px;
-  border-radius: 8px;
+  height: auto;
+  max-height: 70vh;
+  background: #000;
 }
 
-video.recording-player {
-  background: #000;
-  max-height: 320px;
+.pol-img audio.recording-player {
+  display: block;
+  width: 100%;
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  z-index: 1;
 }
 
 /* ---------- Einstellungen ---------- */
