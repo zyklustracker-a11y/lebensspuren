@@ -12,7 +12,7 @@ import {
   onFirstRegistration,
 } from './firebase.js';
 
-const APP_VERSION = '2.2.0';
+const APP_VERSION = '2.3.0';
 
 // ---------------------------------------------------------------------------
 // Kleine Helfer
@@ -1092,6 +1092,10 @@ function buildQuestionRow(q) {
   const row = document.createElement('div');
   row.className = 'question-row';
 
+  // Obere Reihe: Haken, Fragetext, Löschen, Stern
+  const top = document.createElement('div');
+  top.className = 'question-row-top';
+
   const main = document.createElement('button');
   main.className = 'question-row-main';
   const check = document.createElement('span');
@@ -1101,13 +1105,8 @@ function buildQuestionRow(q) {
   const label = document.createElement('span');
   label.textContent = q.text;
   main.append(check, label);
-  main.addEventListener('click', async () => {
-    const idx = state.allQuestions.findIndex((item) => item.qid === q.qid);
-    if (idx < 0) return;
-    await goToQuestion(idx);
-    showView('audio');
-  });
-  row.appendChild(main);
+  main.addEventListener('click', () => openModeDialog(q));
+  top.appendChild(main);
 
   const remove = document.createElement('button');
   remove.className = 'row-remove-btn';
@@ -1121,7 +1120,7 @@ function buildQuestionRow(q) {
       ? 'Frage entfernt – deine Aufnahme dazu bleibt erhalten'
       : 'Frage entfernt');
   });
-  row.appendChild(remove);
+  top.appendChild(remove);
 
   const star = document.createElement('button');
   star.className = `star-btn${p.starred ? ' starred' : ''}`;
@@ -1131,9 +1130,46 @@ function buildQuestionRow(q) {
     await updateProgress(q.qid, { starred: !progressFor(q.qid).starred });
     renderBrowse();
   });
-  row.appendChild(star);
+  top.appendChild(star);
+  row.appendChild(top);
+
+  // Schnellzugriff: diese Frage sofort erzählen (Ton oder Video)
+  const answer = document.createElement('button');
+  answer.className = `answer-btn${p.answered ? ' again' : ''}`;
+  answer.innerHTML = `${svgIcon('mic')} ${p.answered ? 'Noch einmal erzählen' : 'Beantworten'}`;
+  answer.setAttribute('aria-label', `„${q.text}" beantworten`);
+  answer.addEventListener('click', () => openModeDialog(q));
+  row.appendChild(answer);
 
   return row;
+}
+
+// Auswahl „Mit Ton oder mit Video?" – entweder für die nächste offene
+// Frage (Knopf „Erzählen" unten) oder für eine beim Stöbern ausgewählte.
+let pendingTellQid = null;
+
+function openModeDialog(question = null) {
+  pendingTellQid = question ? question.qid : null;
+  $('#mode-question').textContent = question ? question.text : '';
+  $('#mode-question').classList.toggle('hidden', !question);
+  $('#mode-hint').textContent = question
+    ? 'Die Aufnahme beginnt bei dieser Frage. Du kannst jederzeit zur nächsten blättern.'
+    : 'Deine nächste offene Frage wartet schon. Du kannst jederzeit zur nächsten blättern.';
+  $('#mode-dialog').classList.remove('hidden');
+}
+
+// Öffnet den Aufnahme-Bildschirm – bei der ausgewählten Frage,
+// sonst bei der nächsten noch offenen.
+async function startTelling(mode) {
+  $('#mode-dialog').classList.add('hidden');
+  if (pendingTellQid) {
+    const idx = state.allQuestions.findIndex((item) => item.qid === pendingTellQid);
+    if (idx >= 0) await goToQuestion(idx);
+    pendingTellQid = null;
+  } else {
+    continueAtNextUnanswered();
+  }
+  showView(mode === 'video' ? 'video' : 'audio');
 }
 
 // Kleines Eingabeformular (eine Zeile + Speichern/Abbrechen), das einen
@@ -2244,6 +2280,8 @@ async function renderMember() {
       const p = data.progress[q.qid] || {};
       const row = document.createElement('div');
       row.className = 'question-row';
+      const top = document.createElement('div');
+      top.className = 'question-row-top';
       const main = document.createElement('div');
       main.className = 'question-row-main';
       const check = document.createElement('span');
@@ -2252,7 +2290,7 @@ async function renderMember() {
       const label = document.createElement('span');
       label.textContent = q.text;
       main.append(check, label);
-      row.appendChild(main);
+      top.appendChild(main);
       const remove = document.createElement('button');
       remove.className = 'row-remove-btn';
       remove.innerHTML = svgIcon('x');
@@ -2263,14 +2301,15 @@ async function renderMember() {
           ? 'Frage entfernt – die Aufnahme dazu bleibt erhalten'
           : 'Frage entfernt');
       });
-      row.appendChild(remove);
+      top.appendChild(remove);
       if (p.starred) {
         const star = document.createElement('span');
         star.className = 'star-btn starred';
         star.style.pointerEvents = 'none';
         star.innerHTML = svgIcon('star', { fill: true });
-        row.appendChild(star);
+        top.appendChild(star);
       }
+      row.appendChild(top);
       chapterCard.appendChild(row);
     }
 
@@ -2599,18 +2638,13 @@ function wireEvents() {
   $('#tab-browse').addEventListener('click', () => showView('browse'));
   $('#tab-recs').addEventListener('click', () => showView('recordings'));
   // „Erzählen" fragt erst: mit Ton oder mit Video?
-  $('#tab-tell').addEventListener('click', () => $('#mode-dialog').classList.remove('hidden'));
-  $('#mode-audio').addEventListener('click', () => {
+  $('#tab-tell').addEventListener('click', () => openModeDialog());
+  $('#mode-audio').addEventListener('click', () => startTelling('audio'));
+  $('#mode-video').addEventListener('click', () => startTelling('video'));
+  $('#mode-cancel').addEventListener('click', () => {
+    pendingTellQid = null;
     $('#mode-dialog').classList.add('hidden');
-    continueAtNextUnanswered();
-    showView('audio');
   });
-  $('#mode-video').addEventListener('click', () => {
-    $('#mode-dialog').classList.add('hidden');
-    continueAtNextUnanswered();
-    showView('video');
-  });
-  $('#mode-cancel').addEventListener('click', () => $('#mode-dialog').classList.add('hidden'));
 
   // Willkommens-Bildschirm beim allerersten Öffnen
   $('#welcome-signin').addEventListener('click', async () => {
