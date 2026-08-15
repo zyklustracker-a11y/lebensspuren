@@ -1675,6 +1675,98 @@ video.recording-player {
   font-size: 17px;
 }
 
+/* ---------- Willkommen (erstes Öffnen ohne Anmeldung) ---------- */
+
+.welcome {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: var(--bg);
+  overflow-y: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(24px, env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom));
+}
+
+.welcome.hidden {
+  display: none !important;
+}
+
+.welcome-inner {
+  width: 100%;
+  max-width: 460px;
+  text-align: center;
+}
+
+.welcome-title {
+  font-family: var(--font-display);
+  font-size: clamp(34px, 9vw, 44px);
+  font-weight: 600;
+  line-height: 1.1;
+  margin: 8px 0 10px;
+}
+
+.welcome-sub {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 18px;
+  color: var(--text-soft);
+  margin: 0 auto;
+  max-width: 34ch;
+  line-height: 1.45;
+}
+
+.welcome-points {
+  list-style: none;
+  margin: 22px 0 26px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+}
+
+.welcome-points li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  font-size: 16.5px;
+  line-height: 1.45;
+  box-shadow: var(--card-shadow);
+}
+
+.welcome-points .ic {
+  font-size: 22px;
+  color: var(--accent);
+  margin-top: 2px;
+}
+
+.welcome-signin {
+  width: 100%;
+  min-height: 62px;
+  font-size: 19px;
+}
+
+.welcome-later {
+  width: 100%;
+  margin-top: 12px;
+  min-height: 52px;
+  font-size: 16.5px;
+}
+
+.welcome-note {
+  font-size: 14.5px;
+  color: var(--text-soft);
+  line-height: 1.5;
+  margin: 14px auto 0;
+  max-width: 40ch;
+}
+
 /* ---------- Onboarding: Rollen-Wahl + geführte Tour ---------- */
 
 .role-btn {

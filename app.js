@@ -12,7 +12,7 @@ import {
   onFirstRegistration,
 } from './firebase.js';
 
-const APP_VERSION = '2.1.1';
+const APP_VERSION = '2.2.0';
 
 // ---------------------------------------------------------------------------
 // Kleine Helfer
@@ -2442,6 +2442,33 @@ window.addEventListener('resize', () => {
 // Cloud-Sicherung (optional, local-first)
 // ---------------------------------------------------------------------------
 
+// Willkommens-Bildschirm: Wer die App auf diesem Gerät zum ersten Mal
+// öffnet, landet zuerst bei der Anmeldung – niemand soll den Login
+// erst in den Einstellungen suchen müssen. Einmal angemeldet oder
+// bewusst übersprungen, kommt der Bildschirm nicht wieder.
+let welcomeDecided = false;
+
+async function maybeShowWelcome() {
+  if (welcomeDecided) return;
+  if (await getMeta('accountKnown', false)) return;
+  // Wer schon Aufnahmen auf dem Gerät hat, kennt die App bereits.
+  try {
+    if ((await idb.getAll('recordings')).length > 0) {
+      await dismissWelcome();
+      return;
+    }
+  } catch {
+    // Im Zweifel lieber begrüßen als abweisen.
+  }
+  $('#welcome-screen').classList.remove('hidden');
+}
+
+async function dismissWelcome() {
+  welcomeDecided = true;
+  $('#welcome-screen').classList.add('hidden');
+  await setMeta('accountKnown', true);
+}
+
 async function initCloudFeatures() {
   if (!isConfigured()) return; // Ohne Konfiguration: rein lokale App, keine Login-UI.
   state.cloud = await initCloud();
@@ -2455,6 +2482,9 @@ async function initCloudFeatures() {
   onUserChanged((user) => {
     state.user = user;
     if (user) {
+      // Angemeldet: Willkommen ist erledigt (blitzt bei Bestandsnutzern
+      // gar nicht erst auf, weil Firebase den Zustand hier meldet).
+      dismissWelcome();
       syncAll();
       syncFamilyData();
       loadFamilyMembers();
@@ -2462,6 +2492,7 @@ async function initCloudFeatures() {
       state.familyMembers = null;
       state.memberCache.clear();
       $('#btn-home-family').classList.add('hidden');
+      maybeShowWelcome();
     }
     if (state.view === 'settings') renderSettings();
     if (state.view === 'recordings') renderRecordings();
@@ -2580,6 +2611,21 @@ function wireEvents() {
     showView('video');
   });
   $('#mode-cancel').addEventListener('click', () => $('#mode-dialog').classList.add('hidden'));
+
+  // Willkommens-Bildschirm beim allerersten Öffnen
+  $('#welcome-signin').addEventListener('click', async () => {
+    const btn = $('#welcome-signin');
+    btn.disabled = true;
+    try {
+      await signInWithGoogle();
+      // Erfolg: onUserChanged blendet den Bildschirm aus.
+    } catch (err) {
+      console.warn('Anmeldung fehlgeschlagen:', err);
+      showToast('Die Anmeldung hat nicht geklappt. Versuch es noch einmal oder sieh dich erst einmal ohne Anmeldung um.', 'error', 5000);
+    }
+    btn.disabled = false;
+  });
+  $('#welcome-later').addEventListener('click', () => dismissWelcome());
 
   // Onboarding: Rollen-Wahl und Tour-Steuerung
   $('#role-teller').addEventListener('click', () => startTour(TOUR_TELLER));
