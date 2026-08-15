@@ -260,6 +260,37 @@
     </div>
   </div>
 
+  <!-- Willkommen: erscheint beim allerersten Öffnen auf einem Gerät,
+       solange noch niemand angemeldet ist. -->
+  <div id="welcome-screen" class="welcome hidden">
+    <div class="welcome-inner">
+      <p class="cover-over">Willkommen bei</p>
+      <h1 class="welcome-title">Lebensspuren</h1>
+      <p class="welcome-sub">Erzähl deine Erinnerungen – die App stellt dir Fragen und nimmt dich dabei auf.</p>
+      <div class="cover-rule">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M19 4c-6 1-10 5-11.5 11L6 20l5-1.5C17 17 20.5 12 21 6z"/><path d="M7.5 15.5C10 11 13 8 17 6"/></svg>
+      </div>
+
+      <ul class="welcome-points">
+        <li>
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4.5 4.5 0 1 1 .8-8.9A6 6 0 0 1 19 10a4 4 0 0 1-1 7.9z"/><path d="m9 14 2 2 4-4"/></svg>
+          <span>Deine Aufnahmen werden sicher in <b>deinem eigenen Google Drive</b> gespeichert.</span>
+        </li>
+        <li>
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8.5" r="3.2"/><path d="M3.5 19c.6-3 2.8-4.7 5.5-4.7s4.9 1.7 5.5 4.7"/><circle cx="16.8" cy="9.5" r="2.5"/><path d="M15.5 14.6c2.4.2 4.2 1.7 4.9 4.4"/></svg>
+          <span>Deine Familie kann mithören – nur wer von dir eingetragen wird.</span>
+        </li>
+      </ul>
+
+      <button id="welcome-signin" class="tell-btn primary welcome-signin">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4.5 4.5 0 1 1 .8-8.9A6 6 0 0 1 19 10a4 4 0 0 1-1 7.9z"/></svg>
+        Mit Google anmelden
+      </button>
+      <button id="welcome-later" class="action-btn quiet welcome-later">Erst einmal ohne Anmeldung ansehen</button>
+      <p class="welcome-note">Ohne Anmeldung bleiben deine Aufnahmen nur auf diesem Gerät. Du kannst dich später jederzeit in den Einstellungen anmelden.</p>
+    </div>
+  </div>
+
   <!-- Onboarding: Wer bist du? (nach der ersten Registrierung und über
        Einstellungen → „Erklärung" jederzeit erneut) -->
   <div id="role-dialog" class="dialog-overlay hidden">
