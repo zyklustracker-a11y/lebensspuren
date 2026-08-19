@@ -243,7 +243,18 @@ oder Enkel) ist die Wahrheit.
   **In Google Drive anschauen** (bei einer Aufnahme die Datei, sonst der
   Ordner), **Aufnahmen speichern** (iOS/iPadOS über das System-Sheet, sonst
   einzelne Downloads) und **Teilen** an andere Apps. Dasselbe funktioniert in
-  der Familien-Ansicht mit den Aufnahmen der Großeltern.
+  der Familien-Ansicht mit den Aufnahmen der Großeltern. Aufnahmen aus älteren
+  App-Versionen kennen ihren Drive-Ordner noch nicht – die App trägt ihn beim
+  Öffnen der Liste still im Hintergrund nach (über die schon gesicherte Datei,
+  ersatzweise über den Ordnernamen). Lässt er sich wirklich nicht ermitteln,
+  wird der Drive-Punkt im Teilen-Menü ausgegraut und erklärt sich selbst,
+  statt ins Leere zu führen.
+- **Neue Fassungen** übernimmt die installierte App von selbst: Der Service
+  Worker aktiviert sich sofort (`skipWaiting` + `clients.claim`), und wer die
+  App gerade offen hat, sieht oben den Hinweis „Es gibt eine neue Fassung"
+  mit „Jetzt aktualisieren". Eine Neu-Installation ist nie nötig. Eine
+  Prüfung auf Aktualisierungen läuft beim Zurückkommen in die App
+  (höchstens einmal pro Stunde). Testanleitung: [TESTEN.md](TESTEN.md).
 - Nichts geht verloren: Wird die App unterbrochen (Anruf, Bildschirmsperre,
   App-Wechsel), speichert sie das bis dahin Aufgenommene sofort automatisch.
 

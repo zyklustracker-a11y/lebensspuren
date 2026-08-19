@@ -1,8 +1,12 @@
 // Lebensspuren – Service Worker
 // Cached die App-Shell, damit die App auch offline startet.
 // Keine Push-Benachrichtigungen (ausdrücklich nicht gewünscht).
+//
+// Updates: Eine neue Fassung übernimmt sofort (skipWaiting + clients.claim).
+// Installierte Apps holen sie damit spätestens beim nächsten Start – ohne
+// Neu-Installation. Die App zeigt zusätzlich einen Hinweis zum Aktualisieren.
 
-const VERSION = 'lebensspuren-v24';
+const VERSION = 'lebensspuren-v25';
 
 const SHELL = [
   './',
@@ -28,6 +32,12 @@ self.addEventListener('activate', (event) => {
       .then((keys) => Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
+});
+
+// Reserve: Falls ein Browser das skipWaiting beim Installieren übergeht,
+// kann die App die Übernahme über „Jetzt aktualisieren" selbst anstoßen.
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'skipWaiting') self.skipWaiting();
 });
 
 self.addEventListener('fetch', (event) => {

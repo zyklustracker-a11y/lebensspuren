@@ -382,6 +382,54 @@ export async function getDriveFolderId({ interactive = false } = {}) {
   }
 }
 
+// Ermittelt den Ordner, in dem eine bereits gesicherte Datei liegt.
+// Damit lässt sich der Ordner für Aufnahmen aus älteren App-Versionen
+// nachtragen, die ihn noch nicht gespeichert haben.
+export async function getDriveFileParent(fileId) {
+  const token = await getDriveToken();
+  if (!token) return null;
+  try {
+    const res = await (await driveFetch(token,
+      `https://www.googleapis.com/drive/v3/files/${fileId}?fields=parents,trashed`)).json();
+    if (res.trashed) return null;
+    return (res.parents && res.parents[0]) || null;
+  } catch (err) {
+    console.warn('Ordner der Drive-Datei nicht ermittelbar:', err);
+    return null;
+  }
+}
+
+// Sucht einen vorhandenen Unterordner nach Namen – ohne ihn anzulegen.
+async function lookupSubfolder(token, parentId, name) {
+  const safeName = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const q = encodeURIComponent(
+    `name='${safeName}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`
+  );
+  const found = (await (await driveFetch(token,
+    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)&orderBy=createdTime`)).json()).files || [];
+  return found.length > 0 ? found[0].id : null;
+}
+
+// Reserve für den Nachtrag: hangelt sich vom Ordner „Lebensspuren" über die
+// Namen (Profilname, „Kategorie – Frage") nach unten und gibt den tiefsten
+// Ordner zurück, der wirklich existiert. Nie ein Ordner wird dabei angelegt.
+export async function findDriveFolderByPath(names = []) {
+  const token = await getDriveToken();
+  if (!token) return null;
+  try {
+    let folderId = await ensureDriveFolder(token);
+    for (const name of names.filter(Boolean)) {
+      const child = await lookupSubfolder(token, folderId, name);
+      if (!child) break;
+      folderId = child;
+    }
+    return folderId;
+  } catch (err) {
+    console.warn('Drive-Ordner über den Namen nicht gefunden:', err);
+    return null;
+  }
+}
+
 // Lädt eine Drive-Datei als Blob herunter (für „Speichern" und „Teilen"
 // von Aufnahmen, die nur in der Cloud liegen). Wirft, wenn die Datei mit
 // der aktuellen Berechtigung nicht gelesen werden darf – das ist bei
