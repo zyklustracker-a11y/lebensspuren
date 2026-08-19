@@ -1773,7 +1773,9 @@ function updateSelectionBar() {
 // langes Drücken und – solange ausgewählt wird – Tippen zum An- und Abwählen.
 function makeCardSelectable(card, source, id, title) {
   card.dataset.id = id;
-  const box = document.createElement('span');
+  // Eigener Knopf, damit die Auswahl auch mit Tastatur und Screenreader geht.
+  const box = document.createElement('button');
+  box.type = 'button';
   box.className = 'select-box';
   box.setAttribute('role', 'checkbox');
   box.setAttribute('aria-checked', 'false');
@@ -2013,6 +2015,20 @@ function shareItems(items) {
   sendItemsToApps(items);
 }
 
+// Öffnet eine Adresse in einer neuen Ansicht – über einen echten Link,
+// weil window.open in der installierten App (vor allem auf dem iPhone)
+// gern ins Leere läuft. Google Drive startet damit die Drive-App,
+// falls sie installiert ist, sonst die Web-Ansicht.
+function openExternalUrl(url) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 // „In Google Drive anschauen": bei einer einzelnen Aufnahme direkt die
 // Datei, sonst der Ordner. Alle Ordner-Kennungen liegen schon vor dem
 // Antippen bereit, damit sich das Fenster ohne Verzögerung öffnet.
@@ -2025,7 +2041,7 @@ function openInDrive(items) {
     return;
   }
   if (uploaded.length === 1) {
-    window.open(`https://drive.google.com/file/d/${uploaded[0].driveFileId}/view`, '_blank', 'noopener');
+    openExternalUrl(`https://drive.google.com/file/d/${uploaded[0].driveFileId}/view`);
     return;
   }
   const folders = new Set(uploaded.map((it) => it.driveFolderId).filter(Boolean));
@@ -2037,7 +2053,7 @@ function openInDrive(items) {
       + 'oder versuch es später noch einmal.', 'error', 6000);
     return;
   }
-  window.open(`https://drive.google.com/drive/folders/${folderId}`, '_blank', 'noopener');
+  openExternalUrl(`https://drive.google.com/drive/folders/${folderId}`);
   if (!items.every((it) => it.own)) {
     showToast('Google Drive öffnet sich. Falls dort „Kein Zugriff" steht, bitte die Person, '
       + 'dich noch einmal unter Einstellungen → Familie einzutragen.', '', 7000);
@@ -2984,7 +3000,7 @@ function buildMemberRecordingCard(uid, r, isDeleted) {
     open.className = 'action-btn';
     open.innerHTML = `${svgIcon('play', { fill: true })} ${isDeleted ? 'Im Papierkorb abspielen' : 'In Google Drive abspielen'}`;
     open.addEventListener('click', () => {
-      window.open(`https://drive.google.com/file/d/${r.driveFileId}/view`, '_blank', 'noopener');
+      openExternalUrl(`https://drive.google.com/file/d/${r.driveFileId}/view`);
     });
     card.appendChild(open);
   }
