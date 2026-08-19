@@ -15,15 +15,21 @@
   <meta name="apple-mobile-web-app-title" content="Lebensspuren">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <script>
-    // Design und Hell/Dunkel-Modus vor dem ersten Zeichnen setzen,
-    // damit die Seite nicht kurz in der falschen Farbe aufblitzt.
+    // Hell/Dunkel-Modus vor dem ersten Zeichnen setzen, damit die Seite
+    // nicht kurz in der falschen Farbe aufblitzt. Das Farbschema ist für
+    // alle fest „Bernstein“ – ältere gespeicherte Werte werden hier
+    // stillschweigend aufgeräumt.
     (function () {
-      var design = localStorage.getItem('ls-design') || 'warm';
-      var mode = localStorage.getItem('ls-mode') || 'light';
+      var mode = localStorage.getItem('ls-mode');
+      if (mode !== 'light' && mode !== 'dark' && mode !== 'auto') mode = 'light';
+      localStorage.setItem('ls-mode', mode);
+      localStorage.removeItem('ls-design');
       var dark = mode === 'dark' || (mode === 'auto'
         && window.matchMedia('(prefers-color-scheme: dark)').matches);
-      document.documentElement.dataset.design = design;
       document.documentElement.dataset.mode = dark ? 'dark' : 'light';
+      // Statusleiste der installierten App gleich mitfärben (iOS 15+/Android).
+      var meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute('content', dark ? '#1e1811' : '#f2e8d5');
     })();
   </script>
   <link rel="stylesheet" href="styles.css">
@@ -184,9 +190,9 @@
       <span class="view-title">Meine Erinnerungen</span>
     </header>
     <div id="recordings-toolbar" class="recordings-toolbar hidden">
-      <button id="btn-share-all" class="action-btn">
-        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><path d="m8 8 4-4 4 4"/><path d="M5 13v6h14v-6"/></svg>
-        Alles teilen
+      <button id="btn-select-mode" class="action-btn">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="4.5" width="15" height="15" rx="3.5" stroke-dasharray="4 3"/><path d="m8.5 12.2 2.5 2.5 4.5-5"/></svg>
+        Auswählen
       </button>
       <button id="btn-export-all-timestamps" class="action-btn">
         <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
@@ -327,7 +333,83 @@
     </div>
   </div>
 
+  <!-- Teilen-Menü für ausgewählte Aufnahmen: Drive ansehen, auf dem Gerät
+       speichern oder an andere Apps weitergeben. -->
+  <div id="share-sheet" class="dialog-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="share-sheet-title">
+    <div class="dialog-card sheet-card">
+      <p id="share-sheet-title" class="dialog-title">Was möchtest du tun?</p>
+      <p id="share-sheet-sub" class="dialog-text"></p>
+      <button id="share-drive" class="sheet-btn">
+        <span class="sheet-icon">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 7.5a2 2 0 0 1 2-2h3.2l1.8 2h8a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>
+        </span>
+        <span class="sheet-texts">
+          <b>In Google Drive anschauen</b>
+          <span>Öffnet den Ordner mit deinen Aufnahmen</span>
+        </span>
+      </button>
+      <button id="share-save" class="sheet-btn">
+        <span class="sheet-icon">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="m8 11 4 4 4-4"/><path d="M5 19h14"/></svg>
+        </span>
+        <span class="sheet-texts">
+          <b>Aufnahmen speichern</b>
+          <span id="share-save-hint">Legt die Dateien auf diesem Gerät ab</span>
+        </span>
+      </button>
+      <button id="share-send" class="sheet-btn">
+        <span class="sheet-icon">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><path d="m8 8 4-4 4 4"/><path d="M5 13v6h14v-6"/></svg>
+        </span>
+        <span class="sheet-texts">
+          <b>Teilen</b>
+          <span>An WhatsApp, E-Mail, AirDrop und andere Apps</span>
+        </span>
+      </button>
+      <button id="share-sheet-cancel" class="action-btn quiet">Abbrechen</button>
+    </div>
+  </div>
+
+  <!-- Fortschritt beim Speichern oder Teilen mehrerer Dateien -->
+  <div id="progress-dialog" class="dialog-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="progress-title">
+    <div class="dialog-card">
+      <p id="progress-title" class="dialog-title">Einen Moment …</p>
+      <p id="progress-text" class="dialog-text" role="status" aria-live="polite"></p>
+      <div class="progress-bar"><i id="progress-fill"></i></div>
+    </div>
+  </div>
+
+  <!-- Allgemeine Sicherheitsabfrage (z. B. Verbindung entfernen) -->
+  <div id="confirm-dialog" class="dialog-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+    <div class="dialog-card">
+      <p id="confirm-title" class="dialog-title"></p>
+      <p id="confirm-text" class="dialog-text"></p>
+      <button id="confirm-ok" class="action-btn danger">Ja, entfernen</button>
+      <button id="confirm-cancel" class="action-btn quiet">Abbrechen</button>
+    </div>
+  </div>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <!-- Auswahl-Leiste: erscheint über der Bereichs-Leiste, sobald Aufnahmen
+       ausgewählt werden (eigene Erinnerungen und Familien-Ansicht). -->
+  <div id="selection-bar" class="selection-bar hidden" role="region" aria-label="Ausgewählte Aufnahmen">
+    <p id="selection-count" class="selection-count" role="status" aria-live="polite">Keine Aufnahme ausgewählt</p>
+    <div class="selection-actions">
+      <button id="selection-share" class="action-btn primary-action" hidden>
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><path d="m8 8 4-4 4 4"/><path d="M5 13v6h14v-6"/></svg>
+        Teilen und sichern
+      </button>
+      <button id="selection-all" class="action-btn">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="4.5" width="15" height="15" rx="3.5"/><path d="m8.5 12.2 2.5 2.5 4.5-5"/></svg>
+        Alle auswählen
+      </button>
+      <button id="selection-cancel" class="action-btn">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m7 7 10 10M17 7 7 17"/></svg>
+        Abbrechen
+      </button>
+    </div>
+  </div>
 
   <!-- Feste Bereichs-Leiste unten -->
   <nav id="tabbar" class="tabbar">

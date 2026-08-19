@@ -368,10 +368,36 @@ async function driveUploadFile(token, name, mimeType, blob, folderId) {
   return (await res.json()).id;
 }
 
+// Liefert die Kennung des Ordners „Lebensspuren" im Drive des Nutzers –
+// Grundlage für den Knopf „In Google Drive anschauen". Gibt null zurück,
+// wenn gerade kein Drive-Zugriff besteht (dann eben beim nächsten Anlass).
+export async function getDriveFolderId({ interactive = false } = {}) {
+  const token = await getDriveToken({ interactive });
+  if (!token) return null;
+  try {
+    return await ensureDriveFolder(token);
+  } catch (err) {
+    console.warn('Drive-Ordner gerade nicht ermittelbar:', err);
+    return null;
+  }
+}
+
+// Lädt eine Drive-Datei als Blob herunter (für „Speichern" und „Teilen"
+// von Aufnahmen, die nur in der Cloud liegen). Wirft, wenn die Datei mit
+// der aktuellen Berechtigung nicht gelesen werden darf – das ist bei
+// fremden Aufnahmen in der Familien-Ansicht der Normalfall.
+export async function downloadDriveFile(fileId, { interactive = false } = {}) {
+  const token = await getDriveToken({ interactive });
+  if (!token) throw new Error('kein-drive-token');
+  const res = await driveFetch(token,
+    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`);
+  return res.blob();
+}
+
 // Sichert eine Aufnahme nach Google Drive – aufgeräumt in Unterordnern:
 // Lebensspuren / <Profilname> / <Kategorie – Frage> / Dateien
 // (Mediendatei, Zeitstempel-Textdatei, falls vorhanden das Transkript).
-// Metadaten gehen nach Firestore. Gibt die Drive-Datei-ID zurück.
+// Metadaten gehen nach Firestore. Gibt Datei- und Ordner-Kennung zurück.
 export async function uploadRecording(rec, blob, extras = {}) {
   const { timestampsText, transcriptText, profileName, questionFolder } = extras;
   if (!fb) throw new Error('Cloud nicht initialisiert');
@@ -415,12 +441,13 @@ export async function uploadRecording(rec, blob, extras = {}) {
     size: rec.size,
     timestamps: rec.timestamps,
     driveFileId: fileId,
+    driveFolderId: folderId || null,
     sidecarFileIds,
     deviceId: extras.deviceId || null,
     deleted: false,
   });
 
-  return fileId;
+  return { fileId, folderId: folderId || null };
 }
 
 // ---------------------------------------------------------------------------
@@ -530,7 +557,9 @@ export async function removeDriveFolderShare(email) {
 // Spiegelt Profil, Fragenkatalog und Fortschritt des angemeldeten Nutzers
 // nach Firestore, damit Familienmitglieder (laut Security Rules) mitlesen
 // und den Katalog aus der Ferne pflegen können.
-export async function pushFamilyState({ name, familyEmails, catalog, catalogUpdatedAt, progress, pushCatalog }) {
+export async function pushFamilyState({
+  name, familyEmails, catalog, catalogUpdatedAt, progress, pushCatalog, driveFolderId,
+}) {
   if (!fb) return;
   const user = fb.auth.currentUser;
   if (!user) return;
@@ -539,6 +568,8 @@ export async function pushFamilyState({ name, familyEmails, catalog, catalogUpda
     ownerUid: user.uid,
     name: name || '',
     familyEmails: familyEmails || [],
+    // Damit die Familie den freigegebenen Drive-Ordner direkt öffnen kann.
+    driveFolderId: driveFolderId || null,
     updatedAt: Date.now(),
   });
   if (pushCatalog) {
