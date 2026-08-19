@@ -9,7 +9,7 @@ import {
   pushFamilyState, fetchOwnCatalogDoc, queryFamilyMembers, fetchMemberData,
   writeMemberCatalog, fetchOwnRecordingDocs, markOwnRecordingDeleted,
   trashDriveFiles, trashDriveFilesByTitle, deleteMemberRecording,
-  onFirstRegistration,
+  onFirstRegistration, getDriveFolderId, downloadDriveFile,
 } from './firebase.js';
 
 const APP_VERSION = '2.3.0';
@@ -216,6 +216,8 @@ const state = {
   familyMembers: null,       // Personen, die mich als Familie eingetragen haben
   memberUid: null,           // aktuell geöffnete Person in der Familien-Ansicht
   memberCache: new Map(),    // uid → { info, catalog, progress, recordings }
+  select: null,              // Auswahl-Modus: { source, ids } oder null
+  driveRootFolderId: null,   // eigener „Lebensspuren"-Ordner im Google Drive
 };
 
 function currentQuestion() {
@@ -445,6 +447,8 @@ async function showView(name) {
   if (rec.active) await stopRecording('navigation');
   if (state.view === 'video' && name !== 'video') stopCameraPreview();
   if (state.view === 'recordings' && name !== 'recordings') { closePlayer(); releaseThumbUrls(); }
+  // Die Auswahl gilt immer nur für die gerade sichtbare Liste.
+  if (state.view !== name) { endSelectMode(true); closeShareSheet(); }
 
   hideAnsweredDialog();
   $('#mode-dialog').classList.add('hidden');
@@ -1345,14 +1349,35 @@ async function renderRecordings() {
   const recordings = (await idb.getAll('recordings'))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
+  // Für den Auswahl-Modus: Liste in einheitlicher Form und der eigene
+  // Drive-Ordner, damit „In Google Drive anschauen" sofort öffnen kann.
+  selectableItems = recordings.map(itemFromRecording);
+  state.driveRootFolderId = await getMeta('driveRootFolderId', null);
+  if (state.select) {
+    const known = new Set(recordings.map((r) => r.id));
+    [...state.select.ids].forEach((id) => { if (!known.has(id)) state.select.ids.delete(id); });
+  }
+
   $('#recordings-toolbar').classList.toggle('hidden', recordings.length === 0);
+  $('#btn-select-mode').innerHTML = state.select
+    ? `${svgIcon('x')} Auswahl beenden`
+    : `${svgIcon('select')} Auswählen`;
 
   if (recordings.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'recordings-empty';
     empty.textContent = 'Hier erscheinen deine Erinnerungen, sobald du etwas erzählt hast. Tippe unten auf „Erzählen" und leg einfach los!';
     list.appendChild(empty);
+    endSelectMode();
     return;
+  }
+
+  if (!state.select) {
+    const hint = document.createElement('p');
+    hint.className = 'select-hint';
+    hint.innerHTML = `${svgIcon('select')} Tipp: Mit „Auswählen" (oder langem Drücken auf eine Aufnahme) `
+      + 'kannst du mehrere Aufnahmen gemeinsam speichern oder teilen.';
+    list.appendChild(hint);
   }
 
   // Freundliche Erinnerung, ungesicherte Aufnahmen zu teilen bzw. zu sichern.
@@ -1387,6 +1412,7 @@ async function renderRecordings() {
   for (const recording of recordings) {
     list.appendChild(buildRecordingCard(recording));
   }
+  updateSelectionBar();
 }
 
 function buildRecordingCard(recording) {
@@ -1476,6 +1502,7 @@ function buildRecordingCard(recording) {
 
   actions.append(shareBtn, tsBtn, deleteBtn);
   card.append(img, title, meta, actions);
+  makeCardSelectable(card, 'own', recording.id, recording.title);
   return card;
 }
 
@@ -1614,14 +1641,6 @@ async function exportTimestamps(recording) {
   await shareFiles([timestampsFile(recording)], 'Die Zeitstempel-Datei wurde heruntergeladen.');
 }
 
-async function shareAllRecordings() {
-  const recordings = (await idb.getAll('recordings'))
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  if (recordings.length === 0) return;
-  const files = recordings.map(fileForRecording);
-  await shareFiles(files, 'Alle Aufnahmen wurden heruntergeladen.');
-}
-
 async function exportAllTimestamps() {
   const recordings = (await idb.getAll('recordings'))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
@@ -1629,6 +1648,422 @@ async function exportAllTimestamps() {
   const text = recordings.map(timestampsText).join('\n\n————————————\n\n');
   const file = new File([text], 'Lebensspuren – Alle Zeitstempel.txt', { type: 'text/plain' });
   await shareFiles([file], 'Die Zeitstempel-Datei wurde heruntergeladen.');
+}
+
+// ---------------------------------------------------------------------------
+// Auswahl-Modus: mehrere Aufnahmen antippen und gemeinsam weitergeben.
+// Startet über den sichtbaren Knopf „Auswählen" oder durch langes Drücken
+// auf eine Aufnahme – funktioniert in den eigenen Erinnerungen genauso wie
+// in der Familien-Ansicht.
+// ---------------------------------------------------------------------------
+
+const LONG_PRESS_MS = 550;
+
+// Die gerade angezeigte Liste in einheitlicher Form. Grundlage für
+// „Alle auswählen" und für alles, was mit der Auswahl passiert.
+let selectableItems = [];
+
+// Nach einem langen Drücken darf der Fingerlift die eben getroffene
+// Auswahl nicht sofort wieder aufheben.
+let longPressAt = 0;
+
+// Eigene Aufnahme (liegt auf dem Gerät) in einheitlicher Form.
+function itemFromRecording(r) {
+  return {
+    id: r.id,
+    title: r.title,
+    mode: r.mode,
+    mimeType: r.mimeType,
+    size: r.size || 0,
+    blob: r.blob,
+    driveFileId: r.driveFileId || null,
+    driveFolderId: r.driveFolderId || null,
+    own: true,
+  };
+}
+
+// Aufnahme einer anderen Person (liegt nur in deren Google Drive).
+function itemFromMemberRecording(r, rootFolderId) {
+  return {
+    id: r.id,
+    title: r.title || r.id,
+    mode: r.mode,
+    mimeType: r.mimeType,
+    size: r.size || 0,
+    blob: null,
+    driveFileId: r.driveFileId || null,
+    driveFolderId: r.driveFolderId || rootFolderId || null,
+    own: false,
+  };
+}
+
+function isSelected(id) {
+  return Boolean(state.select && state.select.ids.has(id));
+}
+
+function selectedItems() {
+  if (!state.select) return [];
+  return selectableItems.filter((it) => state.select.ids.has(it.id));
+}
+
+function startSelectMode(source, firstId = null) {
+  state.select = { source, ids: new Set(firstId ? [firstId] : []) };
+  document.body.classList.add('selecting');
+  refreshSelectionMarks();
+  updateSelectionBar();
+}
+
+// quiet=true beim Verlassen der Ansicht: dann gibt es nichts mehr aufzufrischen.
+function endSelectMode(quiet = false) {
+  if (!state.select) return;
+  state.select = null;
+  document.body.classList.remove('selecting');
+  $('#selection-bar').classList.add('hidden');
+  if (!quiet) refreshSelectionMarks();
+}
+
+function toggleSelection(id) {
+  if (!state.select) return;
+  const ids = state.select.ids;
+  if (ids.has(id)) ids.delete(id);
+  else ids.add(id);
+  refreshSelectionMarks();
+  updateSelectionBar();
+}
+
+function toggleSelectAll() {
+  if (!state.select) return;
+  const ids = state.select.ids;
+  if (ids.size >= selectableItems.length) ids.clear();
+  else selectableItems.forEach((it) => ids.add(it.id));
+  refreshSelectionMarks();
+  updateSelectionBar();
+}
+
+// Häkchen und Rahmen aller sichtbaren Karten an die Auswahl angleichen.
+function refreshSelectionMarks() {
+  document.querySelectorAll('.recording-card[data-id]').forEach((card) => {
+    const on = isSelected(card.dataset.id);
+    card.classList.toggle('selected', on);
+    const box = card.querySelector('.select-box');
+    if (box) {
+      box.innerHTML = svgIcon(on ? 'squareCheck' : 'square');
+      box.classList.toggle('on', on);
+      box.setAttribute('aria-checked', on ? 'true' : 'false');
+    }
+  });
+}
+
+function updateSelectionBar() {
+  const bar = $('#selection-bar');
+  if (!state.select) { bar.classList.add('hidden'); return; }
+  const n = state.select.ids.size;
+  bar.classList.remove('hidden');
+  $('#selection-count').textContent = n === 0
+    ? 'Noch keine Aufnahme ausgewählt'
+    : n === 1 ? '1 Aufnahme ausgewählt' : `${n} Aufnahmen ausgewählt`;
+  $('#selection-share').hidden = n === 0;
+  const allOn = selectableItems.length > 0 && n >= selectableItems.length;
+  $('#selection-all').innerHTML = allOn
+    ? `${svgIcon('square')} Auswahl aufheben`
+    : `${svgIcon('squareCheck')} Alle auswählen`;
+}
+
+// Eine Aufnahme-Karte für den Auswahl-Modus vorbereiten: Häkchen-Feld,
+// langes Drücken und – solange ausgewählt wird – Tippen zum An- und Abwählen.
+function makeCardSelectable(card, source, id, title) {
+  card.dataset.id = id;
+  const box = document.createElement('span');
+  box.className = 'select-box';
+  box.setAttribute('role', 'checkbox');
+  box.setAttribute('aria-checked', 'false');
+  box.setAttribute('aria-label', `„${title}" auswählen`);
+  box.innerHTML = svgIcon('square');
+  card.appendChild(box);
+  if (isSelected(id)) card.classList.add('selected');
+
+  // Im Auswahl-Modus zählt jeder Tipp auf die Karte als An-/Abwählen –
+  // deshalb vor allen anderen Knöpfen abfangen.
+  card.addEventListener('click', (ev) => {
+    if (!state.select) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (Date.now() - longPressAt < 700) return; // Nachklang des langen Drückens
+    toggleSelection(id);
+  }, true);
+
+  let timer = null;
+  let startX = 0;
+  let startY = 0;
+  const cancel = () => { clearTimeout(timer); timer = null; };
+  card.addEventListener('pointerdown', (ev) => {
+    if (state.select) return;
+    startX = ev.clientX;
+    startY = ev.clientY;
+    timer = setTimeout(() => {
+      timer = null;
+      longPressAt = Date.now();
+      if (navigator.vibrate) navigator.vibrate(15);
+      startSelectMode(source, id);
+    }, LONG_PRESS_MS);
+  });
+  card.addEventListener('pointermove', (ev) => {
+    if (timer && (Math.abs(ev.clientX - startX) > 12 || Math.abs(ev.clientY - startY) > 12)) cancel();
+  });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach((e) => card.addEventListener(e, cancel));
+  card.addEventListener('contextmenu', (ev) => {
+    // Langes Drücken soll das Browser-Menü nicht aufziehen.
+    if (state.select || timer) ev.preventDefault();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Teilen-Menü für die Auswahl: in Google Drive anschauen, auf dem Gerät
+// speichern oder an andere Apps weitergeben.
+// ---------------------------------------------------------------------------
+
+// Ab dieser Gesamtgröße fragen wir lieber vorher nach, statt das
+// System-Teilen kommentarlos scheitern zu lassen.
+const SHARE_WARN_BYTES = 200 * 1024 * 1024;
+
+const DRIVE_NO_ACCESS_TEXT = 'Diese Aufnahmen liegen im Google Drive der anderen Person. '
+  + 'Tippe auf „In Google Drive anschauen" – dort kannst du sie ansehen und speichern.';
+
+let sheetItems = [];
+
+function formatSize(bytes) {
+  if (!bytes) return '';
+  const mb = bytes / (1024 * 1024);
+  return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb.toFixed(mb < 10 ? 1 : 0)} MB`;
+}
+
+function isAppleDevice() {
+  const ua = navigator.userAgent || '';
+  return /iPad|iPhone|iPod/.test(ua)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+function countText(n) {
+  return n === 1 ? '1 Aufnahme' : `${n} Aufnahmen`;
+}
+
+function openShareSheet(items) {
+  if (items.length === 0) return;
+  sheetItems = items;
+  const total = items.reduce((sum, it) => sum + (it.size || 0), 0);
+  const size = formatSize(total);
+  $('#share-sheet-sub').textContent = `${countText(items.length)} ausgewählt${size ? ` · ${size}` : ''}`;
+  $('#share-save-hint').textContent = isAppleDevice()
+    ? 'Videos kommen in „Fotos", Ton-Aufnahmen über „Sichern in …" in die Dateien'
+    : 'Legt die Dateien im Download-Ordner ab';
+  $('#share-sheet').classList.remove('hidden');
+}
+
+function closeShareSheet() {
+  $('#share-sheet').classList.add('hidden');
+}
+
+function showProgress(title, text, ratio) {
+  $('#progress-title').textContent = title;
+  $('#progress-text').textContent = text;
+  $('#progress-fill').style.width = `${Math.round(Math.max(0, Math.min(1, ratio)) * 100)}%`;
+  $('#progress-dialog').classList.remove('hidden');
+}
+
+function hideProgress() {
+  $('#progress-dialog').classList.add('hidden');
+}
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function fileFromBlob(item, blob) {
+  const type = item.mimeType || blob.type || 'application/octet-stream';
+  const ext = extensionForMime(type);
+  return new File([blob], `${sanitizeFilename(item.title)}.${ext}`, { type });
+}
+
+// Liegen alle Aufnahmen auf dem Gerät, entstehen die Dateien ohne Umweg.
+// Das ist auf iOS wichtig: Das System-Sheet muss unmittelbar auf den
+// Fingertipp folgen, sonst lehnt Safari es ab.
+function localFilesFor(items) {
+  if (!items.every((it) => it.blob)) return null;
+  return items.map((it) => fileFromBlob(it, it.blob));
+}
+
+// Besorgt die Dateien zu den ausgewählten Aufnahmen. Fremde Aufnahmen
+// müssen aus Google Drive geladen werden – das gelingt nur, wenn die
+// Berechtigung dafür reicht; sonst zählen wir sie als fehlend.
+async function prepareFiles(items, title) {
+  const local = localFilesFor(items);
+  if (local) return { files: local, missing: 0 };
+
+  const files = [];
+  let missing = 0;
+  for (let i = 0; i < items.length; i++) {
+    showProgress(title, `${countText(items.length)} werden vorbereitet – Nummer ${i + 1} …`, i / items.length);
+    const item = items[i];
+    try {
+      const blob = item.blob || (item.driveFileId
+        ? await downloadDriveFile(item.driveFileId)
+        : null);
+      if (!blob) throw new Error('keine-datei');
+      files.push(fileFromBlob(item, blob));
+    } catch (err) {
+      console.warn(`Datei zu „${item.title}" nicht verfügbar:`, err);
+      missing += 1;
+    }
+  }
+  return { files, missing };
+}
+
+// Einzelne Original-Dateien nacheinander herunterladen – so landen Videos
+// auf Android und am Rechner direkt in der Galerie bzw. im Download-Ordner.
+async function downloadSequentially(files, title) {
+  for (let i = 0; i < files.length; i++) {
+    showProgress(title, `${i + 1} von ${files.length} gespeichert …`, (i + 1) / files.length);
+    const url = URL.createObjectURL(files[i]);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = files[i].name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    if (i < files.length - 1) await delay(500);
+  }
+  hideProgress();
+}
+
+// „Aufnahmen speichern": auf dem Gerät ablegen.
+async function saveItemsToDevice(items) {
+  const { files, missing } = await prepareFiles(items, 'Aufnahmen werden gespeichert');
+  if (files.length === 0) {
+    hideProgress();
+    showToast(items.every((it) => it.own)
+      ? 'Die Dateien konnten nicht vorbereitet werden. Versuch es bitte noch einmal.'
+      : DRIVE_NO_ACCESS_TEXT, 'error', 7000);
+    return;
+  }
+
+  // iOS/iPadOS: über das System-Sheet – dort gibt es „Video sichern"
+  // (Fotos) und „Sichern in Dateien" für Ton-Aufnahmen.
+  if (isAppleDevice() && navigator.canShare && navigator.canShare({ files })) {
+    hideProgress();
+    try {
+      await navigator.share({ files, title: 'Lebensspuren' });
+      showToast(`✓ ${countText(files.length)} gespeichert`, 'success', 4000);
+      return;
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;
+      console.warn('Sichern über das System-Menü nicht möglich:', err);
+    }
+  }
+
+  await downloadSequentially(files, 'Aufnahmen werden gespeichert');
+  const note = missing > 0 ? ` (${missing} konnten nicht geladen werden)` : '';
+  showToast(`✓ ${countText(files.length)} gespeichert${note}`, missing ? '' : 'success', 4500);
+}
+
+// „Teilen": an andere Apps weitergeben.
+async function sendItemsToApps(items) {
+  const { files, missing } = await prepareFiles(items, 'Aufnahmen werden vorbereitet');
+  if (files.length === 0) {
+    hideProgress();
+    showToast(items.every((it) => it.own)
+      ? 'Die Dateien konnten nicht vorbereitet werden. Versuch es bitte noch einmal.'
+      : DRIVE_NO_ACCESS_TEXT, 'error', 7000);
+    return;
+  }
+  hideProgress();
+
+  if (navigator.share && navigator.canShare && navigator.canShare({ files })) {
+    try {
+      await navigator.share({ files, title: 'Lebensspuren' });
+      showToast('✓ Die Aufnahmen sind unterwegs', 'success', 3500);
+      return;
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;
+      console.warn('Teilen fehlgeschlagen, nutze Download:', err);
+    }
+  }
+
+  await downloadSequentially(files, 'Aufnahmen werden heruntergeladen');
+  showToast('Dieser Browser kann Dateien nicht direkt an andere Apps geben. '
+    + `${countText(files.length)} wurden stattdessen gespeichert – von dort kannst du sie verschicken.`,
+  '', 7000);
+}
+
+function shareItems(items) {
+  const total = items.reduce((sum, it) => sum + (it.size || 0), 0);
+  if (total > SHARE_WARN_BYTES) {
+    openConfirmDialog({
+      title: 'Das sind sehr große Dateien',
+      text: `Zusammen sind das ${formatSize(total)}. Viele Apps können so viel auf einmal nicht verschicken. `
+        + 'Du kannst es trotzdem versuchen – oder weniger Aufnahmen auswählen.',
+      okLabel: 'Trotzdem teilen',
+      danger: false,
+      onOk: () => sendItemsToApps(items),
+    });
+    return;
+  }
+  sendItemsToApps(items);
+}
+
+// „In Google Drive anschauen": bei einer einzelnen Aufnahme direkt die
+// Datei, sonst der Ordner. Alle Ordner-Kennungen liegen schon vor dem
+// Antippen bereit, damit sich das Fenster ohne Verzögerung öffnet.
+function openInDrive(items) {
+  const uploaded = items.filter((it) => it.driveFileId);
+  if (uploaded.length === 0) {
+    showToast(items.every((it) => it.own)
+      ? 'Diese Aufnahmen sind noch nicht in Google Drive gesichert. Melde dich an – dann werden sie automatisch gesichert.'
+      : 'Zu diesen Aufnahmen gibt es noch keinen Ordner in Google Drive.', 'error', 6000);
+    return;
+  }
+  if (uploaded.length === 1) {
+    window.open(`https://drive.google.com/file/d/${uploaded[0].driveFileId}/view`, '_blank', 'noopener');
+    return;
+  }
+  const folders = new Set(uploaded.map((it) => it.driveFolderId).filter(Boolean));
+  const folderId = folders.size === 1
+    ? [...folders][0]
+    : (items.every((it) => it.own) ? state.driveRootFolderId : memberRootFolderId());
+  if (!folderId) {
+    showToast('Der Google-Drive-Ordner ist gerade nicht bekannt. Öffne die Aufnahmen einzeln '
+      + 'oder versuch es später noch einmal.', 'error', 6000);
+    return;
+  }
+  window.open(`https://drive.google.com/drive/folders/${folderId}`, '_blank', 'noopener');
+  if (!items.every((it) => it.own)) {
+    showToast('Google Drive öffnet sich. Falls dort „Kein Zugriff" steht, bitte die Person, '
+      + 'dich noch einmal unter Einstellungen → Familie einzutragen.', '', 7000);
+  }
+}
+
+// Der freigegebene Haupt-Ordner der gerade geöffneten Person.
+function memberRootFolderId() {
+  const entry = state.memberCache.get(state.memberUid);
+  return (entry && entry.info && entry.info.driveFolderId) || null;
+}
+
+let pendingConfirm = null;
+
+// Sicherheitsabfrage mit echtem Dialog – für alles, was man nicht
+// versehentlich auslösen soll.
+function openConfirmDialog({ title, text, okLabel = 'Ja', danger = true, onOk }) {
+  $('#confirm-title').textContent = title;
+  $('#confirm-text').textContent = text;
+  const ok = $('#confirm-ok');
+  ok.textContent = okLabel;
+  ok.classList.toggle('danger', danger);
+  ok.classList.toggle('primary-action', !danger);
+  pendingConfirm = onOk;
+  $('#confirm-dialog').classList.remove('hidden');
+}
+
+function closeConfirmDialog() {
+  pendingConfirm = null;
+  $('#confirm-dialog').classList.add('hidden');
 }
 
 // ---------------------------------------------------------------------------
@@ -1970,6 +2405,20 @@ async function syncFamilyData() {
     const familyEmails = await getMeta('familyEmails', []);
     const localUpdatedAt = await getMeta('catalogUpdatedAt', 0);
 
+    // Kennung des eigenen „Lebensspuren"-Ordners merken und mitteilen:
+    // Die Familie öffnet damit später den freigegebenen Ordner direkt.
+    let driveFolderId = await getMeta('driveRootFolderId', null);
+    try {
+      const fresh = await getDriveFolderId();
+      if (fresh && fresh !== driveFolderId) {
+        driveFolderId = fresh;
+        await setMeta('driveRootFolderId', fresh);
+      }
+    } catch (err) {
+      console.warn('Drive-Ordner später erneut ermitteln:', err);
+    }
+    state.driveRootFolderId = driveFolderId;
+
     // Katalog-Abgleich: die neuere Fassung gewinnt (Fern-Änderungen der
     // Familie kommen so aufs Gerät, lokale Änderungen in die Cloud).
     let pushCatalog = true;
@@ -1996,6 +2445,7 @@ async function syncFamilyData() {
       catalogUpdatedAt: await getMeta('catalogUpdatedAt', 0),
       progress: progressAsObject(),
       pushCatalog,
+      driveFolderId,
     });
 
     try {
@@ -2194,6 +2644,9 @@ function buildMemberRecordingCard(uid, r, isDeleted) {
     });
     card.appendChild(purge);
   }
+  // Nur die vorhandenen Aufnahmen lassen sich auswählen und weitergeben –
+  // gelöschte liegen ohnehin nur noch im Drive-Papierkorb.
+  if (!isDeleted) makeCardSelectable(card, 'member', r.id, r.title || r.id);
   return card;
 }
 
@@ -2233,6 +2686,14 @@ async function renderMember() {
   const active = data.recordings.filter((r) => !r.deleted);
   const deleted = data.recordings.filter((r) => r.deleted);
 
+  // Auswahl-Modus auch hier: Aufnahmen der Person gemeinsam ansehen,
+  // speichern oder weitergeben – soweit die Freigabe es zulässt.
+  selectableItems = active.map((r) => itemFromMemberRecording(r, data.info.driveFolderId));
+  if (state.select) {
+    const known = new Set(active.map((r) => r.id));
+    [...state.select.ids].forEach((id) => { if (!known.has(id)) state.select.ids.delete(id); });
+  }
+
   const recHeading = document.createElement('h2');
   recHeading.className = 'browse-category';
   recHeading.textContent = `Aufnahmen (${active.length})`;
@@ -2242,10 +2703,27 @@ async function renderMember() {
     none.className = 'settings-note';
     none.textContent = 'Noch keine Aufnahmen in der Cloud.';
     wrap.appendChild(none);
+    endSelectMode();
+  } else {
+    const bar = document.createElement('div');
+    bar.className = 'recordings-toolbar member-toolbar';
+    const selectBtn = document.createElement('button');
+    selectBtn.className = 'action-btn';
+    selectBtn.innerHTML = state.select
+      ? `${svgIcon('x')} Auswahl beenden`
+      : `${svgIcon('select')} Auswählen`;
+    selectBtn.addEventListener('click', () => {
+      if (state.select) endSelectMode();
+      else startSelectMode('member');
+      renderMember();
+    });
+    bar.appendChild(selectBtn);
+    wrap.appendChild(bar);
   }
   for (const r of active) {
     wrap.appendChild(buildMemberRecordingCard(uid, r, false));
   }
+  updateSelectionBar();
 
   // --- Gelöschte Aufnahmen (nur für die Familie sichtbar) ---
   if (deleted.length > 0) {
@@ -2600,7 +3078,7 @@ async function syncAll() {
         // Zeitlimit je nach Dateigröße (angenommene Mindestrate ~20 KB/s),
         // maximal 15 Minuten pro Aufnahme.
         const timeoutMs = Math.min(120000 + recording.size / 20, 15 * 60 * 1000);
-        const driveFileId = await withTimeout(
+        const { fileId, folderId } = await withTimeout(
           uploadRecording(recording, recording.blob, {
             timestampsText: timestampsText(recording),
             transcriptText: transcriptText(recording),
@@ -2612,7 +3090,10 @@ async function syncAll() {
           'upload-zeitlimit'
         );
         recording.uploaded = true;
-        recording.driveFileId = driveFileId;
+        recording.driveFileId = fileId;
+        // Der Ordner der Aufnahme – damit „In Google Drive anschauen"
+        // später direkt an die richtige Stelle springt.
+        recording.driveFolderId = folderId;
         await idb.put('recordings', recording);
       } catch (err) {
         console.warn(`Upload von "${recording.title}" später erneut versuchen:`, err);
@@ -2718,7 +3199,48 @@ function wireEvents() {
   $('#video-next').addEventListener('click', () => goToQuestion(state.questionIndex + 1));
   $('#video-flip').addEventListener('click', () => flipCamera());
 
-  $('#btn-share-all').addEventListener('click', () => shareAllRecordings());
+  // Auswahl-Modus und Teilen-Menü der Erinnerungen
+  $('#btn-select-mode').addEventListener('click', () => {
+    if (state.select) endSelectMode();
+    else startSelectMode('own');
+    renderRecordings();
+  });
+  $('#selection-all').addEventListener('click', () => toggleSelectAll());
+  $('#selection-cancel').addEventListener('click', () => {
+    const source = state.select && state.select.source;
+    endSelectMode();
+    if (source === 'member') renderMember();
+    else renderRecordings();
+  });
+  $('#selection-share').addEventListener('click', () => openShareSheet(selectedItems()));
+  $('#share-sheet-cancel').addEventListener('click', () => closeShareSheet());
+  $('#share-sheet').addEventListener('click', (ev) => {
+    if (ev.target === $('#share-sheet')) closeShareSheet();
+  });
+  $('#share-drive').addEventListener('click', () => {
+    const items = sheetItems;
+    closeShareSheet();
+    openInDrive(items);
+  });
+  $('#share-save').addEventListener('click', () => {
+    const items = sheetItems;
+    closeShareSheet();
+    saveItemsToDevice(items);
+  });
+  $('#share-send').addEventListener('click', () => {
+    const items = sheetItems;
+    closeShareSheet();
+    shareItems(items);
+  });
+
+  // Allgemeine Sicherheitsabfrage
+  $('#confirm-ok').addEventListener('click', () => {
+    const action = pendingConfirm;
+    closeConfirmDialog();
+    if (action) action();
+  });
+  $('#confirm-cancel').addEventListener('click', () => closeConfirmDialog());
+
   $('#btn-export-all-timestamps').addEventListener('click', () => exportAllTimestamps());
 
   $('#answered-yes').addEventListener('click', async () => {
