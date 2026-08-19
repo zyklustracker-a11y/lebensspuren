@@ -43,6 +43,22 @@ const ICONS = {
   plus: '<path d="M12 5v14M5 12h14"/>',
   star: '<path d="m12 3 2.7 5.8 6.3.7-4.7 4.3 1.3 6.2L12 16.9 6.4 20l1.3-6.2L3 9.5l6.3-.7z"/>',
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.4 9.2a2.7 2.7 0 1 1 3.9 2.5c-.9.5-1.3 1-1.3 1.9"/><path d="M12 16.5v.5"/>',
+  moon: '<path d="M20 14.5A8.2 8.2 0 0 1 9.5 4 8.2 8.2 0 1 0 20 14.5z"/>',
+  autoMode: '<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/>',
+  check: '<path d="m5 12.5 4.5 4.5L19 7"/>',
+  checkCircle: '<circle cx="12" cy="12" r="9"/><path d="m8 12.2 2.8 2.8L16 9.5"/>',
+  square: '<rect x="4.5" y="4.5" width="15" height="15" rx="3.5"/>',
+  squareCheck: '<rect x="4.5" y="4.5" width="15" height="15" rx="3.5"/><path d="m8.5 12.2 2.5 2.5 4.5-5"/>',
+  download: '<path d="M12 4v11"/><path d="m8 11 4 4 4-4"/><path d="M5 19h14"/>',
+  folder: '<path d="M3.5 7.5a2 2 0 0 1 2-2h3.2l1.8 2h8a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>',
+  select: '<rect x="4.5" y="4.5" width="15" height="15" rx="3.5" stroke-dasharray="4 3"/><path d="m8.5 12.2 2.5 2.5 4.5-5"/>',
+  mail: '<rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="m3.8 7 8.2 6 8.2-6"/>',
+  link: '<path d="M10.5 13.5a4 4 0 0 0 5.7 0l2.3-2.3a4 4 0 0 0-5.7-5.7L11.6 6.7"/><path d="M13.5 10.5a4 4 0 0 0-5.7 0l-2.3 2.3a4 4 0 0 0 5.7 5.7l1.2-1.2"/>',
+  refresh: '<path d="M20 11a8 8 0 0 0-14.5-3.5"/><path d="M5.5 4v3.5H9"/><path d="M4 13a8 8 0 0 0 14.5 3.5"/><path d="M18.5 20v-3.5H15"/>',
+  userPlus: '<circle cx="10" cy="8.5" r="3.4"/><path d="M3.8 19.5c.7-3.4 3.2-5.2 6.2-5.2 1.2 0 2.3.3 3.2.8"/><path d="M17.5 14v6M14.5 17h6"/>',
+  arrowRight: '<path d="M4 12h15"/><path d="m14 7 5 5-5 5"/>',
+  arrowLeft: '<path d="M20 12H5"/><path d="m10 7-5 5 5 5"/>',
+  eye: '<path d="M2.5 12S6 6 12 6s9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z"/><circle cx="12" cy="12" r="2.8"/>',
 };
 
 function svgIcon(name, { fill = false } = {}) {
@@ -361,32 +377,38 @@ async function removeCategory(cat) {
 }
 
 // ---------------------------------------------------------------------------
-// Design (drei Designs, jeweils hell und dunkel)
+// Aussehen: eine feste Farbwelt („Bernstein"), wählbar ist nur der Modus
+// – Hell, Dunkel oder Automatisch (folgt der Geräte-Einstellung).
 // ---------------------------------------------------------------------------
 
-const DESIGNS = [
-  { id: 'warm', name: 'Bernstein', hint: 'Warmes Papier', colors: ['#a8402c', '#f2e8d5', '#1e1811'] },
-  { id: 'natur', name: 'Salbei', hint: 'Ruhig und natürlich', colors: ['#47714b', '#e9eee2', '#141a13'] },
-  { id: 'modern', name: 'Indigo', hint: 'Klar und modern', colors: ['#4f46e5', '#ecebf3', '#131120'] },
-];
 const MODES = [
-  { id: 'auto', name: 'Automatisch' },
-  { id: 'light', name: 'Hell' },
-  { id: 'dark', name: 'Dunkel' },
+  { id: 'light', name: 'Hell', hint: 'Wie ein helles Blatt Papier', icon: 'sun' },
+  { id: 'dark', name: 'Dunkel', hint: 'Angenehm für die Augen am Abend', icon: 'moon' },
+  { id: 'auto', name: 'Automatisch', hint: 'Folgt der Einstellung deines Geräts', icon: 'autoMode' },
 ];
 
-function themeSetting() {
-  return {
-    design: localStorage.getItem('ls-design') || 'warm',
-    mode: localStorage.getItem('ls-mode') || 'light',
-  };
+const DEFAULT_MODE = 'light';
+
+// Liest den gespeicherten Modus und räumt dabei Werte älterer App-Versionen
+// auf: das früher wählbare Farbschema („ls-design") entfällt ersatzlos,
+// unbekannte Modus-Werte fallen auf „Hell" zurück.
+function themeMode() {
+  const stored = localStorage.getItem('ls-mode');
+  const mode = MODES.some((m) => m.id === stored) ? stored : DEFAULT_MODE;
+  if (stored !== mode) localStorage.setItem('ls-mode', mode);
+  if (localStorage.getItem('ls-design') !== null) localStorage.removeItem('ls-design');
+  return mode;
+}
+
+function setThemeMode(mode) {
+  localStorage.setItem('ls-mode', mode);
+  applyTheme();
 }
 
 function applyTheme() {
-  const { design, mode } = themeSetting();
+  const mode = themeMode();
   const dark = mode === 'dark'
     || (mode === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-  document.documentElement.dataset.design = design;
   document.documentElement.dataset.mode = dark ? 'dark' : 'light';
   requestAnimationFrame(() => {
     const bg = getComputedStyle(document.body).getPropertyValue('--bg').trim();
@@ -394,8 +416,9 @@ function applyTheme() {
   });
 }
 
+// „Automatisch" reagiert sofort, wenn das Gerät zwischen hell und dunkel wechselt.
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-  if (themeSetting().mode === 'auto') applyTheme();
+  if (themeMode() === 'auto') applyTheme();
 });
 
 // ---------------------------------------------------------------------------
@@ -1686,57 +1709,56 @@ async function renderSettings() {
   if (section === 'ueber') renderAboutSection(wrap);
 }
 
+// „Aussehen": nur noch hell, dunkel oder automatisch – untereinander,
+// mit Icon, Name und Erklärung in einfacher Sprache.
 function renderDesignSection(wrap) {
   const design = settingsSection('Aussehen');
-  const { design: activeDesign, mode: activeMode } = themeSetting();
+  const activeMode = themeMode();
 
-  const designRow = document.createElement('div');
-  designRow.className = 'choice-row';
-  for (const d of DESIGNS) {
+  const note = document.createElement('p');
+  note.className = 'settings-note';
+  note.textContent = 'Möchtest du die App hell oder dunkel sehen?';
+  design.appendChild(note);
+
+  const modeRow = document.createElement('div');
+  modeRow.className = 'choice-row stacked';
+  modeRow.setAttribute('role', 'radiogroup');
+  modeRow.setAttribute('aria-label', 'Heller oder dunkler Modus');
+  for (const m of MODES) {
+    const selected = activeMode === m.id;
     const btn = document.createElement('button');
-    btn.className = `choice-btn${activeDesign === d.id ? ' selected' : ''}`;
-    const dots = document.createElement('span');
-    dots.className = 'swatches';
-    for (const c of d.colors) {
-      const dot = document.createElement('span');
-      dot.className = 'swatch';
-      dot.style.background = c;
-      dots.appendChild(dot);
-    }
+    btn.className = `choice-btn${selected ? ' selected' : ''}`;
+    btn.setAttribute('role', 'radio');
+    btn.setAttribute('aria-checked', selected ? 'true' : 'false');
+    const icon = document.createElement('span');
+    icon.className = 'choice-icon';
+    icon.innerHTML = svgIcon(m.icon);
+    const texts = document.createElement('span');
+    texts.className = 'choice-texts';
     const name = document.createElement('span');
     name.className = 'choice-name';
-    name.textContent = d.name;
+    name.textContent = m.name;
     const hint = document.createElement('span');
     hint.className = 'choice-hint';
-    hint.textContent = d.hint;
-    btn.append(dots, name, hint);
+    hint.textContent = m.hint;
+    texts.append(name, hint);
+    // Kein reiner Farbcode: der ausgewählte Eintrag trägt zusätzlich ein Häkchen.
+    const check = document.createElement('span');
+    check.className = 'choice-check';
+    check.innerHTML = selected ? svgIcon('check') : '';
+    btn.append(icon, texts, check);
     btn.addEventListener('click', () => {
-      localStorage.setItem('ls-design', d.id);
-      applyTheme();
-      renderSettings();
-    });
-    designRow.appendChild(btn);
-  }
-  design.appendChild(designRow);
-
-  const modeLabel = document.createElement('p');
-  modeLabel.className = 'settings-note';
-  modeLabel.textContent = 'Heller oder dunkler Modus:';
-  design.appendChild(modeLabel);
-  const modeRow = document.createElement('div');
-  modeRow.className = 'choice-row segmented';
-  for (const m of MODES) {
-    const btn = document.createElement('button');
-    btn.className = `choice-btn${activeMode === m.id ? ' selected' : ''}`;
-    btn.textContent = m.name;
-    btn.addEventListener('click', () => {
-      localStorage.setItem('ls-mode', m.id);
-      applyTheme();
+      setThemeMode(m.id);
       renderSettings();
     });
     modeRow.appendChild(btn);
   }
   design.appendChild(modeRow);
+
+  const hint = document.createElement('p');
+  hint.className = 'settings-note small';
+  hint.textContent = 'Die Farben der App sind fest eingestellt („Bernstein") – so bleibt alles gut lesbar. Deine Wahl gilt sofort und wird gespeichert.';
+  design.appendChild(hint);
   wrap.appendChild(design);
 }
 

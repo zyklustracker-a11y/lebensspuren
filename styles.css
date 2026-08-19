@@ -3,32 +3,32 @@
    und Überschriften, feine Linien-Icons, feste Bereichs-Leiste unten.
    Große Schrift, große Tippflächen, hohe Kontraste bleiben erhalten.
 
-   Drei Farbwelten (Bernstein = Standard, Salbei, Indigo), jeweils hell
-   und dunkel. Ausgewählt über data-design und data-mode am <html>-Element,
-   umschaltbar in den Einstellungen. */
+   Eine feste Farbwelt („Bernstein"), hell und dunkel. Der Modus steht
+   als data-mode am <html>-Element und ist in den Einstellungen unter
+   „Aussehen" wählbar (Hell, Dunkel, Automatisch). */
 
-/* ---------- Farbwelten ---------- */
+/* ---------- Farbwelt „Bernstein" ---------- */
 
 :root {
-  /* Bernstein, hell (Standard): das Lebensbuch auf warmem Papier */
+  /* Bernstein, hell: das Lebensbuch auf warmem Papier */
   --bg: #f2e8d5;
   --surface: #faf4e6;
   --surface-2: #efe4cd;
   --text: #3a2c1c;
-  --text-soft: #7e6c51;
+  --text-soft: #6d5c43;
   --accent: #a8402c;
   --accent-contrast: #fbf3e4;
   --accent-soft: #f2dccb;
-  --gold: #8c6d2f;
+  --gold: #7b5f28;
   --border: #dfd2b8;
   --record: #a8402c;
   --record-soft: #f2dccb;
   --green: #5c6b45;
   --green-soft: #e4e7d3;
-  --star: #a97f1e;
+  --star: #8a6714;
   --star-muted: #cbbc9d;
   --pending-soft: #f0e3bd;
-  --pending-text: #816a24;
+  --pending-text: #6e5a1c;
   --card-shadow: 0 1px 0 rgba(120, 95, 50, 0.06), 0 6px 16px rgba(90, 70, 35, 0.09);
   --shadow: var(--card-shadow);
   --radius: 10px;
@@ -38,7 +38,7 @@
   --noise-opacity: 0.5;
 }
 
-:root[data-design="warm"][data-mode="dark"] {
+:root[data-mode="dark"] {
   --bg: #1e1811;
   --surface: #2a2216;
   --surface-2: #352b1c;
@@ -46,7 +46,7 @@
   --text-soft: #b3a284;
   --accent: #d0705a;
   --accent-contrast: #241109;
-  --accent-soft: #43291f;
+  --accent-soft: #33201a;
   --gold: #c9a45c;
   --border: #443823;
   --record: #d0705a;
@@ -59,98 +59,6 @@
   --pending-text: #dcc27a;
   --card-shadow: 0 1px 0 rgba(0, 0, 0, 0.3), 0 8px 18px rgba(0, 0, 0, 0.35);
   --noise-opacity: 0.25;
-}
-
-:root[data-design="natur"] {
-  --bg: #e9eee2;
-  --surface: #f7faf1;
-  --surface-2: #e0e7d6;
-  --text: #26301f;
-  --text-soft: #64705a;
-  --accent: #47714b;
-  --accent-contrast: #f2f7ec;
-  --accent-soft: #dcead9;
-  --gold: #77732f;
-  --border: #d2dcc5;
-  --record: #b0492f;
-  --record-soft: #f3ded4;
-  --green: #3d7247;
-  --green-soft: #dcecdc;
-  --star: #a2891c;
-  --star-muted: #c1cab4;
-  --pending-soft: #eeeabc;
-  --pending-text: #77682a;
-  --card-shadow: 0 1px 0 rgba(60, 85, 50, 0.06), 0 6px 16px rgba(50, 75, 45, 0.09);
-  --noise-opacity: 0.35;
-}
-
-:root[data-design="natur"][data-mode="dark"] {
-  --bg: #141a13;
-  --surface: #1d251c;
-  --surface-2: #263024;
-  --text: #e9f0e6;
-  --text-soft: #9dab97;
-  --accent: #8fbc93;
-  --accent-contrast: #10190f;
-  --accent-soft: #263c28;
-  --gold: #bcb464;
-  --border: #2e3a2c;
-  --record: #e2775c;
-  --record-soft: #40241b;
-  --green: #86b988;
-  --green-soft: #22321f;
-  --star: #d3ba52;
-  --star-muted: #4c564a;
-  --pending-soft: #383520;
-  --pending-text: #d5c470;
-  --card-shadow: 0 1px 0 rgba(0, 0, 0, 0.3), 0 8px 18px rgba(0, 0, 0, 0.35);
-  --noise-opacity: 0.2;
-}
-
-:root[data-design="modern"] {
-  --bg: #ecebf3;
-  --surface: #fafaff;
-  --surface-2: #e2e1ee;
-  --text: #211f2e;
-  --text-soft: #676378;
-  --accent: #4f46e5;
-  --accent-contrast: #f6f5ff;
-  --accent-soft: #e4e2fb;
-  --gold: #6d64c9;
-  --border: #d6d4e6;
-  --record: #cf3757;
-  --record-soft: #f9dde4;
-  --green: #2f7d4c;
-  --green-soft: #ddefe2;
-  --star: #b08610;
-  --star-muted: #c2c0d2;
-  --pending-soft: #efe8c5;
-  --pending-text: #7c691f;
-  --card-shadow: 0 1px 0 rgba(45, 40, 90, 0.05), 0 6px 16px rgba(45, 40, 90, 0.09);
-  --noise-opacity: 0.2;
-}
-
-:root[data-design="modern"][data-mode="dark"] {
-  --bg: #131120;
-  --surface: #1d1a2e;
-  --surface-2: #272240;
-  --text: #efedf8;
-  --text-soft: #9c96b6;
-  --accent: #9691f5;
-  --accent-contrast: #14122b;
-  --accent-soft: #2b2752;
-  --gold: #b0aaf0;
-  --border: #2f2a4c;
-  --record: #f36684;
-  --record-soft: #40202b;
-  --green: #6fcb90;
-  --green-soft: #1c3226;
-  --star: #dabf59;
-  --star-muted: #4c4864;
-  --pending-soft: #3a3422;
-  --pending-text: #dcc478;
-  --card-shadow: 0 1px 0 rgba(0, 0, 0, 0.35), 0 8px 18px rgba(0, 0, 0, 0.4);
-  --noise-opacity: 0.15;
 }
 
 /* ---------- Grundlagen ---------- */
@@ -1536,31 +1444,67 @@ video.recording-player {
   background: var(--accent-soft);
 }
 
-.choice-row.segmented .choice-btn {
+/* „Aussehen": die drei Modi untereinander, jeder mit Icon, Name und
+   Erklärung – große Tippfläche, Häkchen zusätzlich zur Farbe. */
+.choice-row.stacked {
+  flex-direction: column;
+  gap: 8px;
+}
+
+.choice-row.stacked .choice-btn {
   flex-direction: row;
+  align-items: center;
+  gap: 14px;
+  text-align: left;
+  padding: 12px 14px;
+  min-height: 68px;
+  background: var(--surface);
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-.swatches {
-  display: flex;
-  gap: 4px;
-}
-
-.swatch {
-  width: 16px;
-  height: 16px;
+.choice-icon {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
-  border: 1px solid rgba(0, 0, 0, 0.15);
+  background: var(--surface-2);
+  color: var(--text-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.choice-btn.selected .choice-icon {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.choice-texts {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.choice-check {
+  flex-shrink: 0;
+  width: 26px;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .choice-name {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 16px;
+  font-size: 17px;
 }
 
 .choice-hint {
-  font-size: 12.5px;
+  font-size: 13.5px;
   color: var(--text-soft);
+  line-height: 1.35;
 }
 
 .family-email-row {

@@ -224,8 +224,8 @@ oder Enkel) ist die Wahrheit.
   (z. B. „Opa, erzähl doch mal von dem Sommer 1974 …"). Eigene Einträge
   haben einen ✕-Knopf zum Entfernen.
 - **Einstellungen** (Zahnrad oben rechts): Google-Konto (anmelden, abmelden,
-  Konto in der App löschen), Design-Auswahl (Indigo, Bernstein, Salbei) und
-  heller/dunkler Modus (auch automatisch nach Systemeinstellung).
+  Konto in der App löschen), „Aussehen" mit der Wahl zwischen Hell, Dunkel und
+  Automatisch (folgt der Systemeinstellung) sowie der Familien-Bereich.
 - **Meine Erinnerungen** listet alle Aufnahmen mit Abspielknopf, Teilen
   (natives Teilen-Menü: WhatsApp, AirDrop, E-Mail, Drive …), Zeitstempel-Export
   als Textdatei und Cloud-Status pro Aufnahme.
@@ -292,12 +292,14 @@ Wie gewünscht, hier die wesentlichen Detailentscheidungen:
     [Mauerfall/Mondlandung/…] passierte?") habe ich als einzige Stelle des
     Katalogs sprachlich ausformuliert, damit sie direkt an Opa gerichtet
     lesbar ist. Alle übrigen Fragen sind wortgleich übernommen.
-15. **Design:** Drei umschaltbare Designs (Salbei = ruhig-natürlich, Standard
-    im dunklen Modus; Indigo = modern-klar; Bernstein = warm mit
-    Serifenschrift), jeweils hell und dunkel, wählbar in den Einstellungen
-    und lokal gespeichert. App-Icon: Sprechblase mit Herz in Salbeigrün.
-    Fragen in 28–40 pt, alle Tippflächen mindestens 56 px, Aufnahmeknopf
-    104 px – bewusst wie der Auslöser einer Kamera-App.
+15. **Design:** Eine feste Farbwelt „Bernstein" (warmes Papier, Serifenschrift)
+    in zwei Modi – Hell, Dunkel und Automatisch (folgt `prefers-color-scheme`
+    und reagiert live auf einen Wechsel). Die Wahl steht in den Einstellungen
+    unter „Aussehen" und wird lokal gespeichert; frühere Farbschema-Werte
+    werden beim Start automatisch bereinigt. Alle Text-Kontraste erfüllen in
+    beiden Modi mindestens WCAG AA. Fragen in 28–40 pt, alle Tippflächen
+    mindestens 56 px, Aufnahmeknopf 104 px – bewusst wie der Auslöser einer
+    Kamera-App.
 16. **Eigene Fragen und Kategorien** werden lokal in IndexedDB gespeichert
     (Katalogdatei `questions.js` bleibt unverändert) und nahtlos in alle
     Modi eingereiht; eigene Einträge sind lösch­bar, der mitgelieferte

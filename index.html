@@ -15,15 +15,21 @@
   <meta name="apple-mobile-web-app-title" content="Lebensspuren">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <script>
-    // Design und Hell/Dunkel-Modus vor dem ersten Zeichnen setzen,
-    // damit die Seite nicht kurz in der falschen Farbe aufblitzt.
+    // Hell/Dunkel-Modus vor dem ersten Zeichnen setzen, damit die Seite
+    // nicht kurz in der falschen Farbe aufblitzt. Das Farbschema ist für
+    // alle fest „Bernstein“ – ältere gespeicherte Werte werden hier
+    // stillschweigend aufgeräumt.
     (function () {
-      var design = localStorage.getItem('ls-design') || 'warm';
-      var mode = localStorage.getItem('ls-mode') || 'light';
+      var mode = localStorage.getItem('ls-mode');
+      if (mode !== 'light' && mode !== 'dark' && mode !== 'auto') mode = 'light';
+      localStorage.setItem('ls-mode', mode);
+      localStorage.removeItem('ls-design');
       var dark = mode === 'dark' || (mode === 'auto'
         && window.matchMedia('(prefers-color-scheme: dark)').matches);
-      document.documentElement.dataset.design = design;
       document.documentElement.dataset.mode = dark ? 'dark' : 'light';
+      // Statusleiste der installierten App gleich mitfärben (iOS 15+/Android).
+      var meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute('content', dark ? '#1e1811' : '#f2e8d5');
     })();
   </script>
   <link rel="stylesheet" href="styles.css">
