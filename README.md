@@ -132,11 +132,20 @@ vollen Einblick:
   Aufnahme stören kann. Qualität: gut für den Überblick – für die
   Buchfassung bleibt ein Dienst wie NotebookLM die bessere Endstufe.
 - **Einrichten (einmalig, auf dem Gerät der erzählenden Person):**
-  Einstellungen → „Familie" → Profilname eintragen (z. B. „Oma Helga") und
-  unter „Familien-Mitglied hinzufügen" die Google-E-Mail des Enkels.
-  Die App gibt daraufhin **automatisch** den Drive-Ordner „Lebensspuren"
-  für diese E-Mail frei; klappt das gerade nicht (offline, noch kein
-  Ordner), holt sie es bei der nächsten Sicherung selbsttätig nach.
+  Einstellungen → „Mit Familie teilen" → Profilname eintragen (z. B.
+  „Oma Helga") und unter „Jemanden einladen" die Google-E-Mail des Enkels
+  (auf Wunsch mit Name und Beziehung). Die App gibt daraufhin
+  **automatisch** den Drive-Ordner „Lebensspuren" für diese E-Mail frei;
+  klappt das gerade nicht (offline, noch kein Ordner), holt sie es bei der
+  nächsten Sicherung selbsttätig nach.
+- **Übersicht der Verknüpfungen:** Derselbe Bereich zeigt als Karten, mit
+  wem man verbunden ist – Avatar bzw. Initialen, Name, Beziehung und
+  Status („Verbunden" / „Einladung ausstehend", jeweils mit Icon und Text,
+  nie nur als Farbe). Aufgeklappt steht dort, was genau geteilt wird, und
+  es gibt „Einladung erneut senden" sowie „Verbindung entfernen" mit
+  Sicherheitsabfrage. Ein zweiter Block listet die Lebensbücher, die man
+  selbst sehen darf. „Einladung zum Weitergeben" erzeugt einen fertigen
+  Text mit App-Link zum Verschicken.
 - **Für das Familien-Mitglied:** In der eigenen Lebensspuren-App mit dem
   eingetragenen Google-Konto anmelden – auf der Startseite erscheint
   automatisch der Bereich **„Familie"**: pro Person Fortschritt
@@ -228,7 +237,13 @@ oder Enkel) ist die Wahrheit.
   Automatisch (folgt der Systemeinstellung) sowie der Familien-Bereich.
 - **Meine Erinnerungen** listet alle Aufnahmen mit Abspielknopf, Teilen
   (natives Teilen-Menü: WhatsApp, AirDrop, E-Mail, Drive …), Zeitstempel-Export
-  als Textdatei und Cloud-Status pro Aufnahme.
+  als Textdatei und Cloud-Status pro Aufnahme. Über „Auswählen" (oder langes
+  Drücken auf eine Aufnahme) lassen sich mehrere Aufnahmen gleichzeitig
+  markieren – auch „Alle auswählen". Für die Auswahl gibt es drei Wege:
+  **In Google Drive anschauen** (bei einer Aufnahme die Datei, sonst der
+  Ordner), **Aufnahmen speichern** (iOS/iPadOS über das System-Sheet, sonst
+  einzelne Downloads) und **Teilen** an andere Apps. Dasselbe funktioniert in
+  der Familien-Ansicht mit den Aufnahmen der Großeltern.
 - Nichts geht verloren: Wird die App unterbrochen (Anruf, Bildschirmsperre,
   App-Wechsel), speichert sie das bis dahin Aufgenommene sofort automatisch.
 

@@ -12,7 +12,7 @@ import {
   onFirstRegistration, getDriveFolderId, downloadDriveFile,
 } from './firebase.js';
 
-const APP_VERSION = '2.3.0';
+const APP_VERSION = '2.4.0';
 
 // ---------------------------------------------------------------------------
 // Kleine Helfer
@@ -1976,10 +1976,14 @@ async function sendItemsToApps(items) {
   }
   hideProgress();
 
+  if (missing > 0) {
+    showToast(`${missing} von ${items.length} Aufnahmen konnten nicht geladen werden – die übrigen werden geteilt.`, '', 5000);
+  }
+
   if (navigator.share && navigator.canShare && navigator.canShare({ files })) {
     try {
       await navigator.share({ files, title: 'Lebensspuren' });
-      showToast('✓ Die Aufnahmen sind unterwegs', 'success', 3500);
+      if (missing === 0) showToast('✓ Die Aufnahmen sind unterwegs', 'success', 3500);
       return;
     } catch (err) {
       if (err && err.name === 'AbortError') return;
@@ -2083,7 +2087,7 @@ function settingsSection(title) {
 // der Inhalt öffnet sich als Unterseite – aufgeräumt und für die
 // Großeltern nicht versehentlich verstellbar.
 const SETTINGS_SECTIONS = [
-  { id: 'familie', icon: 'users', title: 'Familie' },
+  { id: 'familie', icon: 'users', title: 'Mit Familie teilen' },
   { id: 'aussehen', icon: 'sun', title: 'Aussehen' },
   { id: 'konto', icon: 'cloudCheck', title: 'Konto & Sicherung' },
   { id: 'ueber', icon: 'info', title: 'Über die App' },
@@ -2260,59 +2264,412 @@ function renderAccountSection(wrap) {
   wrap.appendChild(account);
 }
 
-async function renderFamilySection(wrap) {
-  const family = settingsSection('Familie');
-  const famNote = document.createElement('p');
-  famNote.className = 'settings-note';
-  famNote.textContent = 'Hier legst du fest, wer aus der Familie mitschauen darf: Der Google-Drive-Ordner mit den Aufnahmen wird automatisch für die eingetragene Person freigegeben, und sie sieht Fortschritt und Aufnahmen in ihrer eigenen Lebensspuren-App.';
-  family.appendChild(famNote);
+// Mögliche Beziehungen – bewusst kurz und in gewohnter Sprache.
+const FAMILY_RELATIONS = [
+  { id: '', name: 'Ohne Angabe' },
+  { id: 'kind', name: 'Kind' },
+  { id: 'enkel', name: 'Enkelkind' },
+  { id: 'partner', name: 'Partner:in' },
+  { id: 'geschwister', name: 'Geschwister' },
+  { id: 'elternteil', name: 'Elternteil' },
+  { id: 'freund', name: 'Freund:in' },
+  { id: 'andere', name: 'Andere' },
+];
 
+function relationName(id) {
+  const found = FAMILY_RELATIONS.find((r) => r.id === id);
+  return found && found.id ? found.name : '';
+}
+
+// Initialen für den Avatar – aus dem Namen, sonst aus der E-Mail-Adresse.
+function initialsFor(text) {
+  const src = (text || '').trim();
+  if (!src) return '?';
+  const parts = src.split(/[\s.@_-]+/).filter(Boolean);
+  const letters = parts.slice(0, 2).map((p) => p[0]).join('');
+  return (letters || src[0]).toUpperCase();
+}
+
+// Zusatzangaben zu den eingetragenen E-Mail-Adressen (Name, Beziehung,
+// wann die Drive-Freigabe zuletzt bestätigt wurde).
+async function getFamilyContacts() {
+  return (await getMeta('familyContacts', {})) || {};
+}
+
+async function updateFamilyContact(email, patch) {
+  const all = await getFamilyContacts();
+  all[email] = { ...(all[email] || {}), ...patch };
+  await setMeta('familyContacts', all);
+}
+
+async function removeFamilyContact(email) {
+  const all = await getFamilyContacts();
+  delete all[email];
+  await setMeta('familyContacts', all);
+}
+
+// Kleines Kennzeichen mit Icon und Text – nie nur eine Farbe, damit die
+// Bedeutung auch ohne Farbsehen und mit Screenreader ankommt.
+function buildChip(kind, icon, text) {
+  const chip = document.createElement('span');
+  chip.className = `person-chip ${kind}`;
+  chip.innerHTML = svgIcon(icon);
+  chip.appendChild(document.createTextNode(` ${text}`));
+  return chip;
+}
+
+// Eine Karte je verknüpfter Person: Avatar, Name, Beziehung, Status und
+// – aufgeklappt – wer was sieht sowie die Aktionen dazu.
+function buildFamilyPersonCard(email, contact) {
+  const connected = Boolean(contact.sharedAt);
+  const card = document.createElement('article');
+  card.className = 'person-card';
+
+  const head = document.createElement('div');
+  head.className = 'person-head';
+  const avatar = document.createElement('span');
+  avatar.className = 'person-avatar';
+  avatar.setAttribute('aria-hidden', 'true');
+  avatar.textContent = initialsFor(contact.name || email);
+  const texts = document.createElement('div');
+  texts.className = 'person-texts';
+  const name = document.createElement('p');
+  name.className = 'person-name';
+  name.textContent = contact.name || email;
+  const sub = document.createElement('p');
+  sub.className = 'person-sub';
+  sub.textContent = contact.name ? email : 'Google-Konto';
+  const chips = document.createElement('div');
+  chips.className = 'person-chips';
+  const rel = relationName(contact.relation);
+  if (rel) chips.appendChild(buildChip('neutral', 'users', rel));
+  chips.appendChild(connected
+    ? buildChip('ok', 'checkCircle', 'Verbunden')
+    : buildChip('wait', 'clock', 'Einladung ausstehend'));
+  texts.append(name, sub, chips);
+  head.append(avatar, texts);
+  card.appendChild(head);
+
+  const direction = document.createElement('p');
+  direction.className = 'person-direction';
+  direction.innerHTML = svgIcon('arrowRight');
+  direction.appendChild(document.createTextNode(
+    ' Diese Person sieht deine Aufnahmen und deinen Fortschritt.'
+  ));
+  card.appendChild(direction);
+
+  // Details erst auf Wunsch – die Karten bleiben so übersichtlich.
+  const details = document.createElement('div');
+  details.className = 'person-details hidden';
+
+  const what = document.createElement('ul');
+  what.className = 'person-shared-list';
+  const sharedPoints = [
+    ['folder', 'Der Google-Drive-Ordner „Lebensspuren" mit allen Aufnahmen (nur lesen)'],
+    ['photo', 'Alle Aufnahmen samt Datum und Länge'],
+    ['feather', 'Welche Fragen du schon erzählt hast'],
+    ['plus', 'Die Person darf dir aus der Ferne neue Fragen eintragen'],
+  ];
+  for (const [icon, text] of sharedPoints) {
+    const li = document.createElement('li');
+    li.innerHTML = svgIcon(icon);
+    li.appendChild(document.createTextNode(` ${text}`));
+    what.appendChild(li);
+  }
+  details.appendChild(what);
+
+  const relLabel = document.createElement('label');
+  relLabel.className = 'person-relation';
+  relLabel.textContent = 'Beziehung:';
+  const relSelect = document.createElement('select');
+  for (const r of FAMILY_RELATIONS) {
+    const opt = document.createElement('option');
+    opt.value = r.id;
+    opt.textContent = r.name;
+    if ((contact.relation || '') === r.id) opt.selected = true;
+    relSelect.appendChild(opt);
+  }
+  relSelect.addEventListener('change', async () => {
+    await updateFamilyContact(email, { relation: relSelect.value });
+    showToast('✓ Beziehung gespeichert', 'success');
+    renderSettings();
+  });
+  relLabel.appendChild(relSelect);
+  details.appendChild(relLabel);
+
+  const actions = document.createElement('div');
+  actions.className = 'person-actions';
+
+  const resend = document.createElement('button');
+  resend.className = 'action-btn';
+  resend.innerHTML = `${svgIcon('refresh')} Einladung erneut senden`;
+  resend.addEventListener('click', async () => {
+    resend.disabled = true;
+    resend.innerHTML = `${svgIcon('refresh')} Wird eingerichtet …`;
+    try {
+      await shareDriveFolderWithEmail(email, { interactive: true });
+      sessionSharedEmails.add(email);
+      await updateFamilyContact(email, { sharedAt: Date.now() });
+      showToast('✓ Freigabe erneut eingerichtet', 'success', 4000);
+    } catch (err) {
+      console.warn('Erneute Freigabe fehlgeschlagen:', err);
+      showToast('Das hat gerade nicht geklappt. Die Freigabe wird beim nächsten Sichern automatisch nachgeholt.', '', 6000);
+    }
+    renderSettings();
+  });
+
+  const remove = document.createElement('button');
+  remove.className = 'action-btn danger';
+  remove.innerHTML = `${svgIcon('trash')} Verbindung entfernen`;
+  remove.addEventListener('click', () => {
+    openConfirmDialog({
+      title: 'Verbindung entfernen?',
+      text: `${contact.name || email} sieht deine Aufnahmen dann nicht mehr. `
+        + 'Deine Aufnahmen selbst bleiben natürlich erhalten. Du kannst die Person jederzeit wieder eintragen.',
+      okLabel: 'Ja, Verbindung entfernen',
+      onOk: async () => {
+        await removeFamilyEmail(email);
+        showToast('Verbindung entfernt');
+        renderSettings();
+      },
+    });
+  });
+
+  actions.append(resend, remove);
+  details.appendChild(actions);
+
+  const toggle = document.createElement('button');
+  toggle.className = 'person-toggle';
+  toggle.setAttribute('aria-expanded', 'false');
+  toggle.innerHTML = `${svgIcon('eye')} Verknüpfung ansehen und verwalten`;
+  toggle.addEventListener('click', () => {
+    const open = details.classList.toggle('hidden') === false;
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    toggle.innerHTML = open
+      ? `${svgIcon('x')} Details schließen`
+      : `${svgIcon('eye')} Verknüpfung ansehen und verwalten`;
+  });
+
+  card.append(toggle, details);
+  return card;
+}
+
+// Karte für die andere Richtung: Lebensbücher, die du sehen darfst.
+function buildIncomingPersonCard(member) {
+  const card = document.createElement('article');
+  card.className = 'person-card';
+  const head = document.createElement('div');
+  head.className = 'person-head';
+  const avatar = document.createElement('span');
+  avatar.className = 'person-avatar';
+  avatar.setAttribute('aria-hidden', 'true');
+  avatar.textContent = initialsFor(member.name || 'Familie');
+  const texts = document.createElement('div');
+  texts.className = 'person-texts';
+  const name = document.createElement('p');
+  name.className = 'person-name';
+  name.textContent = member.name || 'Ohne Namen';
+  const sub = document.createElement('p');
+  sub.className = 'person-sub';
+  sub.textContent = 'Hat dich als Familien-Mitglied eingetragen';
+  const chips = document.createElement('div');
+  chips.className = 'person-chips';
+  chips.appendChild(buildChip('ok', 'checkCircle', 'Verbunden'));
+  texts.append(name, sub, chips);
+  head.append(avatar, texts);
+
+  const direction = document.createElement('p');
+  direction.className = 'person-direction';
+  direction.innerHTML = svgIcon('arrowLeft');
+  direction.appendChild(document.createTextNode(' Du siehst die Aufnahmen dieser Person.'));
+
+  const open = document.createElement('button');
+  open.className = 'action-btn primary-action person-open';
+  open.innerHTML = `${svgIcon('photo')} Lebensbuch öffnen`;
+  open.addEventListener('click', () => {
+    state.memberUid = member.uid;
+    showView('member');
+  });
+
+  card.append(head, direction, open);
+  return card;
+}
+
+// Einladen: E-Mail-Adresse eintragen und – für alle, die lieber schreiben –
+// eine fertige Einladung zum Weitergeben.
+function buildInviteCard(onDone) {
+  const card = document.createElement('div');
+  card.className = 'invite-card';
+  const title = document.createElement('p');
+  title.className = 'invite-title';
+  title.innerHTML = `${svgIcon('userPlus')} Jemanden einladen`;
+  const note = document.createElement('p');
+  note.className = 'settings-note small';
+  note.textContent = 'Trage die E-Mail-Adresse des Google-Kontos ein. Der Drive-Ordner wird sofort freigegeben, '
+    + 'und die Person sieht dein Lebensbuch in ihrer eigenen Lebensspuren-App.';
+
+  const input = document.createElement('input');
+  input.type = 'email';
+  input.inputMode = 'email';
+  input.autocapitalize = 'off';
+  input.spellcheck = false;
+  input.placeholder = 'E-Mail-Adresse (Google-Konto) …';
+  input.maxLength = 120;
+  input.setAttribute('aria-label', 'E-Mail-Adresse des Google-Kontos');
+
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.placeholder = 'Name, z. B. „Enkelin Marie" (freiwillig)';
+  nameInput.maxLength = 60;
+  nameInput.setAttribute('aria-label', 'Name der Person');
+
+  const relLabel = document.createElement('label');
+  relLabel.className = 'person-relation';
+  relLabel.textContent = 'Beziehung:';
+  const relSelect = document.createElement('select');
+  for (const r of FAMILY_RELATIONS) {
+    const opt = document.createElement('option');
+    opt.value = r.id;
+    opt.textContent = r.name;
+    relSelect.appendChild(opt);
+  }
+  relLabel.appendChild(relSelect);
+
+  const save = document.createElement('button');
+  save.className = 'action-btn primary-action settings-btn';
+  save.innerHTML = `${svgIcon('mail')} Einladen und freigeben`;
+  save.addEventListener('click', async () => {
+    const email = input.value.trim();
+    if (!email) { input.focus(); return; }
+    save.disabled = true;
+    const ok = await addFamilyEmail(email, {
+      name: nameInput.value.trim(),
+      relation: relSelect.value,
+    });
+    save.disabled = false;
+    if (ok !== false) onDone();
+  });
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') save.click(); });
+
+  const link = document.createElement('button');
+  link.className = 'action-btn settings-btn';
+  link.innerHTML = `${svgIcon('link')} Einladung zum Weitergeben`;
+  link.addEventListener('click', () => shareInviteLink());
+
+  card.append(title, note, input, nameInput, relLabel, save, link);
+  return card;
+}
+
+// Fertige Einladung (Link zur App + kurze Anleitung) über das System-Menü
+// weitergeben – oder, wo das nicht geht, in die Zwischenablage legen.
+async function shareInviteLink() {
+  const appUrl = `${location.origin}${location.pathname}`.replace(/index\.html$/, '');
+  const myName = ((await getMeta('profileName', '')) || '').trim();
+  const text = `Ich erzähle meine Erinnerungen mit der App „Lebensspuren"`
+    + `${myName ? ` – ${myName}` : ''}.\n\n`
+    + `1. App öffnen: ${appUrl}\n`
+    + '2. Mit deinem Google-Konto anmelden.\n'
+    + '3. Sag mir Bescheid, welche E-Mail-Adresse du benutzt hast – ich trage sie ein, '
+    + 'dann siehst du meine Aufnahmen.';
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: 'Lebensspuren', text });
+      return;
+    }
+    await navigator.clipboard.writeText(text);
+    showToast('✓ Einladung kopiert – du kannst sie jetzt einfügen', 'success', 4000);
+  } catch (err) {
+    if (err && err.name === 'AbortError') return;
+    console.warn('Einladung teilen fehlgeschlagen:', err);
+    showToast('Das hat nicht geklappt. Schreib der Person einfach die Adresse der App.', 'error', 5000);
+  }
+}
+
+async function renderFamilySection(wrap) {
+  // --- Dein Name (steht auf dem Buchdeckel und in der Familien-Ansicht) ---
+  const profile = settingsSection('Dein Name');
+  const profileNote = document.createElement('p');
+  profileNote.className = 'settings-note';
+  profileNote.textContent = 'So erscheint dein Lebensbuch bei deiner Familie.';
   const nameInput = document.createElement('input');
   nameInput.type = 'text';
   nameInput.placeholder = 'Dein Name, z. B. „Oma Helga"';
   nameInput.maxLength = 60;
   nameInput.value = await getMeta('profileName', '');
+  nameInput.setAttribute('aria-label', 'Dein Name');
   const nameSave = document.createElement('button');
   nameSave.className = 'action-btn settings-btn';
-  nameSave.textContent = 'Namen speichern';
+  nameSave.innerHTML = `${svgIcon('check')} Namen speichern`;
   nameSave.addEventListener('click', async () => {
     await setMeta('profileName', nameInput.value.trim());
     showToast('✓ Name gespeichert', 'success');
     syncFamilyData();
+    renderHome();
   });
-  family.append(nameInput, nameSave);
+  profile.append(profileNote, nameInput, nameSave);
+  wrap.appendChild(profile);
 
-  if (state.cloud && state.user) {
-    const emails = await getMeta('familyEmails', []);
-    for (const email of emails) {
-      const row = document.createElement('div');
-      row.className = 'family-email-row';
-      const label = document.createElement('span');
-      label.textContent = email;
-      const remove = document.createElement('button');
-      remove.className = 'row-remove-btn';
-      remove.innerHTML = svgIcon('x');
-      armButton(remove, 'Entfernen?', async () => {
-        await removeFamilyEmail(email);
-        showToast('Zugriff entfernt');
-        renderSettings();
-      });
-      row.append(label, remove);
-      family.appendChild(row);
-    }
-    family.appendChild(buildAddButton('Familien-Mitglied hinzufügen', 'E-Mail-Adresse (Google-Konto) …', async (text) => {
-      const ok = await addFamilyEmail(text);
-      if (ok !== false) renderSettings();
-    }, () => renderSettings()));
-  } else {
+  // --- Wer deine Aufnahmen sehen darf ---
+  const family = settingsSection('Mit Familie teilen');
+  const famNote = document.createElement('p');
+  famNote.className = 'settings-note';
+  famNote.textContent = 'Hier siehst du auf einen Blick, mit wem du verknüpft bist.';
+  family.appendChild(famNote);
+
+  if (!state.cloud || !state.user) {
     const hint = document.createElement('p');
     hint.className = 'settings-note small';
     hint.textContent = state.cloud
-      ? 'Melde dich zuerst oben unter „Konto & Sicherung" an – dann kannst du hier Familien-Mitglieder eintragen.'
+      ? 'Melde dich zuerst unter „Konto & Sicherung" an – dann kannst du hier Familien-Mitglieder einladen.'
       : 'Für den Familien-Zugriff muss die Cloud-Sicherung eingerichtet sein.';
     family.appendChild(hint);
+    wrap.appendChild(family);
+    return;
   }
+
+  const emails = await getMeta('familyEmails', []);
+  const contacts = await getFamilyContacts();
+
+  if (emails.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'person-empty';
+    const emptyIcon = document.createElement('span');
+    emptyIcon.className = 'person-empty-icon';
+    emptyIcon.innerHTML = svgIcon('users');
+    const emptyTitle = document.createElement('p');
+    emptyTitle.className = 'person-empty-title';
+    emptyTitle.textContent = 'Noch niemand verknüpft';
+    const emptyText = document.createElement('p');
+    emptyText.className = 'settings-note';
+    emptyText.textContent = 'Lade ein Familien-Mitglied ein – dann kann es deine Erinnerungen anhören und dir neue Fragen schicken.';
+    empty.append(emptyIcon, emptyTitle, emptyText);
+    family.appendChild(empty);
+  } else {
+    const count = document.createElement('p');
+    count.className = 'person-count';
+    count.textContent = emails.length === 1
+      ? '1 Person ist mit dir verknüpft'
+      : `${emails.length} Personen sind mit dir verknüpft`;
+    family.appendChild(count);
+    for (const email of emails) {
+      family.appendChild(buildFamilyPersonCard(email, contacts[email] || {}));
+    }
+  }
+
+  family.appendChild(buildInviteCard(() => renderSettings()));
   wrap.appendChild(family);
+
+  // --- Die andere Richtung: Lebensbücher, die du sehen darfst ---
+  const members = state.familyMembers || [];
+  if (members.length > 0) {
+    const incoming = settingsSection('Lebensbücher, die du sehen darfst');
+    const inNote = document.createElement('p');
+    inNote.className = 'settings-note';
+    inNote.textContent = 'Diese Personen haben dich eingetragen – du kannst ihre Aufnahmen anhören und ihnen Fragen schicken.';
+    incoming.appendChild(inNote);
+    for (const m of members) incoming.appendChild(buildIncomingPersonCard(m));
+    wrap.appendChild(incoming);
+  }
 }
 
 function renderAboutSection(wrap) {
@@ -2462,6 +2819,8 @@ async function syncFamilyData() {
       try {
         await shareDriveFolderWithEmail(email);
         sessionSharedEmails.add(email);
+        // Für die Familien-Übersicht: ab jetzt gilt die Person als verbunden.
+        await updateFamilyContact(email, { sharedAt: Date.now() });
       } catch (err) {
         console.warn(`Ordner-Freigabe für ${email} folgt beim nächsten Versuch:`, err);
         break;
@@ -2474,7 +2833,7 @@ async function syncFamilyData() {
   }
 }
 
-async function addFamilyEmail(rawEmail) {
+async function addFamilyEmail(rawEmail, details = {}) {
   const email = rawEmail.trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     showToast('Das sieht nicht wie eine E-Mail-Adresse aus.', 'error');
@@ -2485,11 +2844,17 @@ async function addFamilyEmail(rawEmail) {
     familyEmails.push(email);
     await setMeta('familyEmails', familyEmails);
   }
+  await updateFamilyContact(email, {
+    name: details.name || '',
+    relation: details.relation || '',
+    addedAt: Date.now(),
+  });
   // Sofort versuchen, den Drive-Ordner freizugeben (mit Anmelde-Popup, falls
   // nötig). Klappt es nicht, holt syncFamilyData es automatisch nach.
   try {
     await shareDriveFolderWithEmail(email, { interactive: true });
     sessionSharedEmails.add(email);
+    await updateFamilyContact(email, { sharedAt: Date.now() });
     showToast('✓ Familien-Zugriff eingerichtet, Drive-Ordner ist freigegeben', 'success', 4000);
   } catch (err) {
     console.warn('Ordner-Freigabe wird automatisch nachgeholt:', err);
@@ -2502,6 +2867,7 @@ async function addFamilyEmail(rawEmail) {
 async function removeFamilyEmail(email) {
   const familyEmails = (await getMeta('familyEmails', [])).filter((e) => e !== email);
   await setMeta('familyEmails', familyEmails);
+  await removeFamilyContact(email);
   sessionSharedEmails.delete(email);
   try {
     await removeDriveFolderShare(email);
@@ -2871,7 +3237,7 @@ const TOUR_TELLER = [
     text: 'Unter „Erinnerungen“ liegt alles, was du erzählt hast: Antippen zum Anhören oder Anschauen, Teilen mit der Familie – und angemeldet wird jede Aufnahme automatisch in deinem Google Drive gesichert.' },
   { view: 'settings', prep: () => { state.settingsSection = 'familie'; },
     target: '#settings-content .settings-section',
-    text: 'Zum Schluss das Wichtigste: Hier unter Einstellungen → „Familie“ tippst du auf „Familien-Mitglied hinzufügen“ und gibst die Google-E-Mail-Adresse der Person ein, die deine Aufnahmen sehen darf. Die Freigabe wird dann automatisch gespeichert und eingerichtet. Viel Freude beim Erzählen!' },
+    text: 'Zum Schluss das Wichtigste: Hier unter Einstellungen → „Mit Familie teilen“ siehst du, wer schon verknüpft ist. Unter „Jemanden einladen“ gibst du die Google-E-Mail-Adresse der Person ein, die deine Aufnahmen sehen darf – die Freigabe wird dann automatisch eingerichtet. Viel Freude beim Erzählen!' },
 ];
 
 // Schritte für Familienmitglieder, die Erinnerungen bewahren möchten.
@@ -2879,7 +3245,7 @@ const TOUR_KEEPER = [
   { view: 'home', target: '.cover',
     text: 'Willkommen! Das ist das Lebensbuch – hier sammeln sich die Erinnerungen deiner Familie.' },
   { view: 'home', target: '#btn-settings',
-    text: 'Wichtig für den Start: Das ältere Familienmitglied trägt auf seinem Gerät unter Einstellungen → „Familie“ deine Google-E-Mail-Adresse ein. Damit bekommst du Zugriff.' },
+    text: 'Wichtig für den Start: Das ältere Familienmitglied trägt auf seinem Gerät unter Einstellungen → „Mit Familie teilen“ deine Google-E-Mail-Adresse ein. Damit bekommst du Zugriff.' },
   { view: 'home', target: '.home-tiles',
     text: 'Sobald das passiert ist, erscheint hier die Kachel „Familie“: Dort siehst du den Fortschritt und alle Aufnahmen deiner Liebsten – abspielbar direkt aus Google Drive.' },
   { view: 'browse', target: '#browse-list .chapter-card',
