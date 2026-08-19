@@ -10,9 +10,10 @@ import {
   writeMemberCatalog, fetchOwnRecordingDocs, markOwnRecordingDeleted,
   trashDriveFiles, trashDriveFilesByTitle, deleteMemberRecording,
   onFirstRegistration, getDriveFolderId, downloadDriveFile,
+  getDriveFileParent, findDriveFolderByPath,
 } from './firebase.js';
 
-const APP_VERSION = '2.4.0';
+const APP_VERSION = '2.4.1';
 
 // ---------------------------------------------------------------------------
 // Kleine Helfer
@@ -1413,6 +1414,11 @@ async function renderRecordings() {
     list.appendChild(buildRecordingCard(recording));
   }
   updateSelectionBar();
+
+  // Bestandsaufnahmen ohne gespeicherten Drive-Ordner still nachtragen.
+  if (recordings.some((r) => r.uploaded && !r.driveFolderId) || !state.driveRootFolderId) {
+    runFolderBackfill();
+  }
 }
 
 function buildRecordingCard(recording) {
@@ -1858,6 +1864,15 @@ function openShareSheet(items) {
   $('#share-save-hint').textContent = isAppleDevice()
     ? 'Videos kommen in „Fotos", Ton-Aufnahmen über „Sichern in …" in die Dateien'
     : 'Legt die Dateien im Download-Ordner ab';
+
+  // Gibt es in Google Drive nichts zu öffnen, wird der Punkt sichtbar
+  // ausgegraut und erklärt sich selbst – statt ins Leere zu führen.
+  const drive = driveTargetFor(items);
+  const driveBtn = $('#share-drive');
+  driveBtn.classList.toggle('is-off', !drive.url);
+  driveBtn.setAttribute('aria-disabled', drive.url ? 'false' : 'true');
+  $('#share-drive-hint').textContent = drive.reason;
+
   $('#share-sheet').classList.remove('hidden');
 }
 
@@ -2033,30 +2048,16 @@ function openExternalUrl(url) {
 // Datei, sonst der Ordner. Alle Ordner-Kennungen liegen schon vor dem
 // Antippen bereit, damit sich das Fenster ohne Verzögerung öffnet.
 function openInDrive(items) {
-  const uploaded = items.filter((it) => it.driveFileId);
-  if (uploaded.length === 0) {
-    showToast(items.every((it) => it.own)
-      ? 'Diese Aufnahmen sind noch nicht in Google Drive gesichert. Melde dich an – dann werden sie automatisch gesichert.'
-      : 'Zu diesen Aufnahmen gibt es noch keinen Ordner in Google Drive.', 'error', 6000);
+  const drive = driveTargetFor(items);
+  if (!drive.url) {
+    // Der Knopf war ausgegraut – hier kommt noch einmal die Erklärung dazu.
+    showToast(drive.reason, 'error', 7000);
     return;
   }
-  if (uploaded.length === 1) {
-    openExternalUrl(`https://drive.google.com/file/d/${uploaded[0].driveFileId}/view`);
-    return;
-  }
-  const folders = new Set(uploaded.map((it) => it.driveFolderId).filter(Boolean));
-  const folderId = folders.size === 1
-    ? [...folders][0]
-    : (items.every((it) => it.own) ? state.driveRootFolderId : memberRootFolderId());
-  if (!folderId) {
-    showToast('Der Google-Drive-Ordner ist gerade nicht bekannt. Öffne die Aufnahmen einzeln '
-      + 'oder versuch es später noch einmal.', 'error', 6000);
-    return;
-  }
-  openExternalUrl(`https://drive.google.com/drive/folders/${folderId}`);
+  openExternalUrl(drive.url);
   if (!items.every((it) => it.own)) {
     showToast('Google Drive öffnet sich. Falls dort „Kein Zugriff" steht, bitte die Person, '
-      + 'dich noch einmal unter Einstellungen → Familie einzutragen.', '', 7000);
+      + 'dich noch einmal unter Einstellungen → „Mit Familie teilen" einzutragen.', '', 7000);
   }
 }
 
@@ -2064,6 +2065,111 @@ function openInDrive(items) {
 function memberRootFolderId() {
   const entry = state.memberCache.get(state.memberUid);
   return (entry && entry.info && entry.info.driveFolderId) || null;
+}
+
+// ---------------------------------------------------------------------------
+// Nachtrag für Bestandsaufnahmen: Aufnahmen aus älteren App-Versionen kennen
+// ihren Drive-Ordner noch nicht. Er wird still im Hintergrund nachgetragen –
+// zuerst über die schon gesicherte Datei, ersatzweise über den Ordnernamen.
+// ---------------------------------------------------------------------------
+
+let folderBackfillRunning = false;
+
+async function backfillDriveFolders() {
+  if (folderBackfillRunning) return false;
+  if (!state.cloud || !state.user || !navigator.onLine) return false;
+
+  folderBackfillRunning = true;
+  let changed = false;
+  try {
+    // Der Haupt-Ordner ist die Reserve, wenn eine Auswahl aus mehreren
+    // Frage-Ordnern stammt – ihn merken wir uns dauerhaft.
+    if (!state.driveRootFolderId) {
+      const root = await getDriveFolderId();
+      if (root) {
+        state.driveRootFolderId = root;
+        await setMeta('driveRootFolderId', root);
+        changed = true;
+      }
+    }
+
+    const pending = (await idb.getAll('recordings'))
+      .filter((r) => r.uploaded && r.driveFileId && !r.driveFolderId);
+    if (pending.length > 0) {
+      const profileName = sanitizeFilename(await getMeta('profileName', ''));
+      for (const recording of pending) {
+        let folderId = await getDriveFileParent(recording.driveFileId);
+        if (!folderId) {
+          folderId = await findDriveFolderByPath([profileName, questionFolderName(recording)]);
+        }
+        if (!folderId) continue;
+        recording.driveFolderId = folderId;
+        await idb.put('recordings', recording);
+        changed = true;
+      }
+    }
+  } catch (err) {
+    console.warn('Ordner-Nachtrag später erneut:', err);
+  } finally {
+    folderBackfillRunning = false;
+  }
+  return changed;
+}
+
+// Stößt den Nachtrag im Hintergrund an und frischt die Ansicht auf, sobald
+// etwas dazugekommen ist. Läuft die Auswahl gerade, bleibt die Liste stehen –
+// die Ordner-Kennungen werden dann direkt in der Auswahl ergänzt.
+function runFolderBackfill() {
+  backfillDriveFolders().then(async (changed) => {
+    if (!changed || state.view !== 'recordings') return;
+    if (!state.select) { renderRecordings(); return; }
+    const rows = await idb.getAll('recordings');
+    const folders = new Map(rows.map((r) => [r.id, r.driveFolderId || null]));
+    for (const item of selectableItems) {
+      if (item.own && !item.driveFolderId) item.driveFolderId = folders.get(item.id) || null;
+    }
+  }).catch((err) => console.warn('Ordner-Nachtrag später erneut:', err));
+}
+
+// Wohin führt „In Google Drive anschauen"? Liefert die Adresse und den
+// erklärenden Satz – oder, wenn nichts zu öffnen ist, nur den Grund dafür.
+// So steht im Menü nie ein Knopf, hinter dem sich nichts öffnet.
+function driveTargetFor(items) {
+  const own = items.every((it) => it.own);
+  const uploaded = items.filter((it) => it.driveFileId);
+
+  if (uploaded.length === 0) {
+    return {
+      url: null,
+      reason: own
+        ? 'Noch nicht in Google Drive gesichert. Melde dich an – dann wird alles automatisch gesichert.'
+        : 'Zu diesen Aufnahmen ist in Google Drive noch keine Datei hinterlegt.',
+    };
+  }
+  if (uploaded.length === 1) {
+    return {
+      url: `https://drive.google.com/file/d/${uploaded[0].driveFileId}/view`,
+      reason: 'Öffnet diese Aufnahme in Google Drive',
+    };
+  }
+
+  const folders = new Set(uploaded.map((it) => it.driveFolderId).filter(Boolean));
+  const folderId = folders.size === 1
+    ? [...folders][0]
+    : (own ? state.driveRootFolderId : memberRootFolderId());
+  if (folderId) {
+    return {
+      url: `https://drive.google.com/drive/folders/${folderId}`,
+      reason: 'Öffnet den Ordner mit den Aufnahmen',
+    };
+  }
+  return {
+    url: null,
+    reason: own
+      ? 'Der Ordner ist noch nicht bekannt. Wähle eine einzelne Aufnahme aus – die lässt sich sofort öffnen.'
+      : 'Der Ordner dieser Person ist noch nicht bekannt. Sie muss die App einmal mit Internet öffnen. '
+        + 'Wähle so lange eine einzelne Aufnahme aus.',
+  };
 }
 
 let pendingConfirm = null;
@@ -3409,6 +3515,7 @@ async function initCloudFeatures() {
       syncAll();
       syncFamilyData();
       loadFamilyMembers();
+      runFolderBackfill();
     } else {
       state.familyMembers = null;
       state.memberCache.clear();
@@ -3625,6 +3732,13 @@ function wireEvents() {
 
   $('#btn-export-all-timestamps').addEventListener('click', () => exportAllTimestamps());
 
+  // Hinweis auf eine neue Fassung
+  $('#update-now').addEventListener('click', () => applyUpdate());
+  $('#update-later').addEventListener('click', () => {
+    $('#update-banner').classList.add('hidden');
+    showToast('Alles klar – die neue Fassung kommt beim nächsten Öffnen von selbst.', '', 4500);
+  });
+
   $('#answered-yes').addEventListener('click', async () => {
     if (pendingAnsweredQid) await updateProgress(pendingAnsweredQid, { answered: true });
     hideAnsweredDialog();
@@ -3664,10 +3778,72 @@ async function migrateAnsweredFlags() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Neue Fassung der App: Der Service Worker übernimmt beim nächsten Start
+// automatisch (skipWaiting + clients.claim). Wer die App gerade offen hat,
+// bekommt zusätzlich einen freundlichen Hinweis – neu installieren muss
+// niemand.
+// ---------------------------------------------------------------------------
+
+let updateBannerShown = false;
+let waitingWorker = null;
+
+function showUpdateBanner(worker = null) {
+  if (worker) waitingWorker = worker;
+  if (updateBannerShown) return;
+  // Während einer laufenden Aufnahme stört nichts – dann eben gleich noch einmal.
+  if (rec.active) { setTimeout(() => showUpdateBanner(), 30000); return; }
+  updateBannerShown = true;
+  $('#update-banner').classList.remove('hidden');
+  // Nur nach oben rollen, wenn ohnehin fast oben gelesen wird – sonst
+  // reißt der Hinweis mitten aus einer Liste heraus.
+  if (window.scrollY < 200) window.scrollTo(0, 0);
+}
+
+function applyUpdate() {
+  const btn = $('#update-now');
+  btn.disabled = true;
+  btn.textContent = 'Wird geladen …';
+  // Sicherheitshalber die neue Fassung übernehmen lassen, falls sie noch wartet.
+  if (waitingWorker) {
+    try { waitingWorker.postMessage({ type: 'skipWaiting' }); } catch { /* dann eben ohne */ }
+  }
+  setTimeout(() => window.location.reload(), 300);
+}
+
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
   try {
-    await navigator.serviceWorker.register('sw.js');
+    // updateViaCache: 'none' – die Datei sw.js kommt immer frisch aus dem Netz,
+    // sonst könnte ein alter Browser-Zwischenspeicher das Update verzögern.
+    const reg = await navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' });
+
+    // Liegt schon eine neue Fassung bereit (z. B. beim letzten Besuch geladen)?
+    if (reg.waiting && navigator.serviceWorker.controller) showUpdateBanner(reg.waiting);
+
+    reg.addEventListener('updatefound', () => {
+      const installing = reg.installing;
+      if (!installing) return;
+      installing.addEventListener('statechange', () => {
+        // „installed" mit vorhandenem Controller heißt: Es gab schon eine
+        // ältere Fassung – jetzt ist eine neue fertig geladen.
+        if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+          showUpdateBanner(reg.waiting || installing);
+        }
+      });
+    });
+
+    // Installierte Apps bleiben oft tagelang geöffnet. Beim Zurückkommen und
+    // sobald wieder Internet da ist, höchstens einmal pro Stunde nachsehen.
+    let lastCheck = Date.now();
+    const checkForUpdate = () => {
+      if (document.visibilityState !== 'visible' || !navigator.onLine) return;
+      if (Date.now() - lastCheck < 60 * 60 * 1000) return;
+      lastCheck = Date.now();
+      reg.update().catch((err) => console.warn('Update-Prüfung später erneut:', err));
+    };
+    document.addEventListener('visibilitychange', checkForUpdate);
+    window.addEventListener('online', checkForUpdate);
   } catch (err) {
     console.warn('Service Worker konnte nicht registriert werden:', err);
   }

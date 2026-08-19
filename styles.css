@@ -1300,6 +1300,75 @@ body.selecting .view.with-tabbar {
   line-height: 1.35;
 }
 
+/* Nicht verfügbar: sichtbar zurückgenommen – der Erklärungstext im Knopf
+   sagt, warum. Bewusst ohne Transparenz, damit die Schrift lesbar bleibt. */
+.sheet-btn.is-off,
+.sheet-btn.is-off:active {
+  background: var(--surface-2);
+  border-style: dashed;
+  border-color: var(--border);
+}
+
+.sheet-btn.is-off .sheet-icon {
+  background: var(--surface-2);
+  border: 1.5px solid var(--border);
+  color: var(--text-soft);
+}
+
+.sheet-btn.is-off .sheet-texts b {
+  color: var(--text-soft);
+}
+
+/* ---------- Hinweis auf eine neue Fassung ---------- */
+
+.update-banner {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: calc(12px + env(safe-area-inset-top)) 18px 14px;
+  background: var(--accent-soft);
+  border-bottom: 2px solid var(--accent);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  position: relative;
+  z-index: 2;
+}
+
+.update-banner.hidden {
+  display: none;
+}
+
+.update-text {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 17.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.update-text .ic {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.update-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.update-actions .action-btn {
+  flex: 1;
+  justify-content: center;
+  min-height: 50px;
+}
+
+.update-actions .action-btn.primary-action {
+  flex: 2;
+}
+
 .recordings-list {
   flex: 1;
   padding: 0 8px 8px;

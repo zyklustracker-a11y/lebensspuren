@@ -36,6 +36,20 @@
 </head>
 <body>
 
+  <!-- Hinweis auf eine neue Fassung der App. Erscheint nur, wenn im
+       Hintergrund eine neue Version geladen wurde – ein Tipp genügt,
+       niemand muss die App neu installieren. -->
+  <div id="update-banner" class="update-banner hidden" role="status">
+    <p class="update-text">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 0 0-14.5-3.5"/><path d="M5.5 4v3.5H9"/><path d="M4 13a8 8 0 0 0 14.5 3.5"/><path d="M18.5 20v-3.5H15"/></svg>
+      Es gibt eine neue Fassung von Lebensspuren.
+    </p>
+    <div class="update-actions">
+      <button id="update-now" class="action-btn primary-action">Jetzt aktualisieren</button>
+      <button id="update-later" class="action-btn quiet">Später</button>
+    </div>
+  </div>
+
   <!-- ============ Startseite: der Buchdeckel ============ -->
   <section id="view-home" class="view active with-tabbar">
     <button id="btn-settings" class="gear-btn" aria-label="Einstellungen">
@@ -345,7 +359,7 @@
         </span>
         <span class="sheet-texts">
           <b>In Google Drive anschauen</b>
-          <span>Öffnet den Ordner mit deinen Aufnahmen</span>
+          <span id="share-drive-hint">Öffnet den Ordner mit den Aufnahmen</span>
         </span>
       </button>
       <button id="share-save" class="sheet-btn">
